@@ -1,0 +1,171 @@
+name: Check
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: Identify Changes
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    outputs:
+      has_changes: ${{ steps.compute.outputs.has_changes }}
+      matrix: ${{ steps.compute.outputs.matrix }}
+      github_changed: ${{ steps.compute.outputs.github_changed }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect Path Changes
+        id: changes
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            nvm:
+              - 'nvm/**'
+            shim:
+              - 'shim/**'
+            github:
+              - '.github/**'
+              - 'LICENSE'
+
+      - name: Build App Matrix
+        id: compute
+        shell: bash
+        run: |
+          apps=()
+          github_changed=false
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            apps+=("nvm" "shim")
+          else
+            if [[ "${{ steps.changes.outputs.nvm }}" == "true" ]]; then
+              apps+=("nvm")
+            fi
+            if [[ "${{ steps.changes.outputs.shim }}" == "true" ]]; then
+              apps+=("shim")
+            fi
+            if [[ "${{ steps.changes.outputs.github }}" == "true" ]]; then
+              github_changed=true
+            fi
+          fi
+
+          echo "github_changed=$github_changed" >> "$GITHUB_OUTPUT"
+
+          if [[ ${#apps[@]} -eq 0 ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"app":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          matrix_json=$(printf '%s\n' "${apps[@]}" | jq -R . | jq -sc '{app: .}')
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
+
+  github-guard:
+    name: Guard .github Changes
+    needs: detect
+    if: ${{ github.event_name == 'pull_request' && needs.detect.outputs.github_changed == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate Team Membership For .github Changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: ${{ github.repository_owner }}
+          TEAM_SLUG: core
+          ACTOR: ${{ github.event.pull_request.user.login }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://api.github.com/orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${ACTOR}"
+          status=$(curl -sS -o /tmp/team_check.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$endpoint")
+
+          if [[ "$status" == "200" ]]; then
+            echo "${ACTOR} is a member of ${ORG}/${TEAM_SLUG}."
+            exit 0
+          fi
+
+            echo "::error::Changes to .github/** and LICENSE are restricted to ${ORG}/${TEAM_SLUG} members."
+          echo "${TEAM_SLUG} team membership verification failed for user: ${ACTOR} (HTTP ${status})."
+          cat /tmp/team_check.json || true
+          exit 1
+
+  test:
+    name: test (${{ matrix.app }})
+    needs: detect
+    if: ${{ needs.detect.outputs.has_changes == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+    env:
+      GOBIN: ${{ github.workspace }}\go-bin
+      QGO_VERSION: 1.2.8
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
+
+      - name: Cache qgo binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOBIN }}
+          key: qgo-${{ runner.os }}-${{ runner.arch }}-${{ env.QGO_VERSION }}
+
+      - name: Install qgo if not cached
+        shell: pwsh
+        run: |
+          if (!(Test-Path "$env:GOBIN\qgo.exe")) {
+            go install github.com/quikdev/go/cmd/qgo@v${{ env.QGO_VERSION }}
+          } else {
+            Write-Host "using cached qgo binary"
+          }
+
+      - name: Add qgo to PATH
+        shell: pwsh
+        run: |
+          echo "${env:GOBIN}" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Run qgo test
+        shell: pwsh
+        working-directory: ${{ matrix.app }}
+        run: |
+          qgo test
+
+  no-op:
+    name: Fail On No App Changes
+    needs: detect
+    if: ${{ needs.detect.outputs.has_changes != 'true' }}
+    runs-on: ubuntu-slim
+    steps:
+      - name: Fail
+        run: |
+          echo "No changes detected under nvm/ or shim/."
+          echo "This PR does not contribute changes to a testable app path."
+          exit 1

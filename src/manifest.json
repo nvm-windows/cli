@@ -1,0 +1,51 @@
+{
+  "name": "nvm",
+  "version": "2.0.0-alpha.1",
+  "description": "Node Version Manager for Windows",
+  "appLabel": "NVM for Windows",
+  "appId": "40078385-F676-4C61-9A9C-F9028599D6D3",
+  "appUserModelId": "AuthorSoftware.NVMWindows",
+  "appUrl": "https://nvm-windows.com",
+  "appOrgLabel": "Author Software",
+  "license": "MIT",
+  "author": "Author Software Inc.",
+  "build": "./cmd",
+  "output": "../../bin",
+  "update": true,
+  "upx": false,
+  "tiny": false,
+  "minify": true,
+  "profile": {
+    "release": {
+      "nowork": true
+    }
+  },
+  "variables": {
+    "main.name": "manifest.name",
+    "main.version": "manifest.version",
+    "main.description": "manifest.description",
+    "main.appUserModelId": "manifest.appUserModelId",
+    "common/inspect.shimId": "nvm4wshim",
+    "common/preferences.org": "manifest.appOrgLabel",
+    "common/preferences.subkey": "Preferences",
+    "common/preferences.app": "manifest.name",
+    "common/settings.AppId": "manifest.appUserModelId",
+    "common/http.appname": "manifest.appLabel",
+    "common/http.version": "manifest.version",
+    "common/http.edition": "community",
+    "common/http.httpCacheRoot": "metadata",
+    "main.eventSourceName": "manifest.appLabel",
+    "nvm/log.sourceName": "manifest.appLabel",
+    "nvm/commands/env.helpURL": "https://docs.nvm-windows.com"
+  },
+  "default_profiles": [],
+  "scripts": {
+    "prebuild": "cd cmd && go-winres make --in ../winres/winres.json"
+  },
+  "dependencies": {
+    "github.com/nvm-windows/shim/node": "1.0.0",
+    "github.com/nvm-windows/shim/proxy": "1.0.0",
+    "github.com/nvm-windows/shim/reshim": "1.0.0",
+    "github.com/nvm-windows/sync": "1.0.0"
+  }
+}
