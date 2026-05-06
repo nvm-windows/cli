@@ -16,11 +16,9 @@ concurrency:
 jobs:
   detect-version:
     name: Identify Release Version
-    runs-on: windows-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: read
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       should_release: ${{ steps.detect.outputs.should_release }}
       version: ${{ steps.detect.outputs.version }}
@@ -29,54 +27,58 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Detect Manifest Version
         id: detect
-        shell: pwsh
+        shell: bash
         run: |
-          $manifest = Get-Content "src/manifest.json" -Raw | ConvertFrom-Json
-          $version = "$($manifest.version)"
+          set -euo pipefail
 
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            Write-Error "Unable to read src/manifest.json version"
+          version="$(python3 -c 'import json; print(json.load(open("src/manifest.json", "r", encoding="utf-8")).get("version", ""))')"
+          if [[ -z "$version" ]]; then
+            echo "::error::Unable to read src/manifest.json version"
             exit 1
-          }
+          fi
 
-          $tag = $version
-          if (-not $tag.StartsWith("v")) {
-            $tag = "v$tag"
-          }
+          tag="$version"
+          if [[ "$tag" == v* ]]; then
+            tag="$tag"
+          elif [[ "$tag" == V* ]]; then
+            tag="v${tag:1}"
+          else
+            tag="v$tag"
+          fi
 
-          $legacyTag = $version
-          $shouldRelease = $true
+          legacy_tag="$version"
+          should_release="true"
 
-          gh api "/repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" --silent *> $null
-          if ($LASTEXITCODE -eq 0) {
-            $shouldRelease = $false
-          }
+          if gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --silent >/dev/null 2>&1; then
+            should_release="false"
+          fi
 
-          if ($legacyTag -ne $tag) {
-            gh api "/repos/$env:GITHUB_REPOSITORY/git/ref/tags/$legacyTag" --silent *> $null
-            if ($LASTEXITCODE -eq 0) {
-              $shouldRelease = $false
-            }
-          }
+          if [[ "$legacy_tag" != "$tag" ]]; then
+            if gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${legacy_tag}" --silent >/dev/null 2>&1; then
+              should_release="false"
+            fi
+          fi
 
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "should_release=$($shouldRelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
 
-          if (-not $shouldRelease) {
-            Write-Host "No release needed. Manifest version '$version' already has a matching tag."
-          } else {
-            Write-Host "Release needed for manifest version '$version'."
-          }
+          if [[ "$should_release" == "false" ]]; then
+            echo "No release needed. Manifest version '$version' already has a matching tag."
+          else
+            echo "Release needed for manifest version '$version'."
+          fi
 
   create-release:
     name: Create Tag + Release
     needs: detect-version
     if: ${{ needs.detect-version.outputs.should_release == 'true' }}
-    runs-on: windows-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
     env:
@@ -89,20 +91,20 @@ jobs:
     steps:
       - name: Publish Metadata
         id: meta
-        shell: pwsh
+        shell: bash
         run: |
-          "version=$env:VERSION" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=$env:TAG" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create Tag
-        shell: pwsh
+        shell: bash
         run: |
-          gh api -X POST "/repos/$env:GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$env:TAG" -f sha="$env:GITHUB_SHA"
+          gh api -X POST "/repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}"
 
       - name: Create Release
-        shell: pwsh
+        shell: bash
         run: |
-          gh release create "$env:TAG" --title "$env:TAG" --notes "Automated release for version $env:VERSION"
+          gh release create "${TAG}" --title "${TAG}" --notes "Automated release for version ${VERSION}"
 
   build-assets:
     name: Build And Upload (${{ matrix.arch }})
@@ -192,7 +194,7 @@ jobs:
       - create-release
       - build-assets
     if: ${{ failure() && needs.detect-version.outputs.should_release == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
     env:
@@ -218,7 +220,7 @@ jobs:
     name: No Release Needed
     needs: detect-version
     if: ${{ needs.detect-version.outputs.should_release != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: Skip
         run: |
