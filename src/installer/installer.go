@@ -162,6 +162,7 @@ func install(
 		installDir: getRoot(nodeVersion),
 		cacheFile:  cacheArchivePath(nodeVersion, cfg),
 	}
+	defer healInstalledVersionVisibility(txn.installDir)
 
 	if info, err := os.Stat(txn.installDir); err == nil && info.IsDir() {
 		txn.installed = true

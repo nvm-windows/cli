@@ -29,6 +29,7 @@ func Uninstall(cfg UninstallConfig) error {
 	}
 
 	defer updateSystemVersions()
+	defer healInstalledVersionVisibility()
 
 	var wg sync.WaitGroup
 	var failures atomic.Int32
@@ -82,10 +83,12 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 		return nil
 	}
 
+	installed := scanInstalledVersions()
+
 	last := normalizeVersionSpec(cfg.LastVersion)
 	if last != "" {
 		if _, removingLast := targetSet[last]; !removingLast {
-			if isInstalledInList(scanInstalledVersions(), last) {
+			if isInstalledInList(installed, last) {
 				if err := settings.Put("active_version", last); err != nil {
 					return err
 				}
@@ -98,21 +101,14 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 		}
 	}
 
-	for _, candidate := range scanInstalledVersions() {
-		normalized := normalizeVersionSpec(candidate)
-		if normalized == "" || normalized == active {
-			continue
-		}
-		if _, removing := targetSet[normalized]; removing {
-			continue
-		}
-		if err := settings.Put("active_version", normalized); err != nil {
+	if fallback, ok := nextInstalledFallback(installed, active, targetSet); ok {
+		if err := settings.Put("active_version", fallback); err != nil {
 			return err
 		}
 		if err := settings.Put("last_version", ""); err != nil {
 			return err
 		}
-		fmt.Printf("Switching active version from v%s to v%s before uninstall.\n", active, normalized)
+		fmt.Printf("Switching active version from v%s to v%s before uninstall.\n", active, fallback)
 		return nil
 	}
 
@@ -124,6 +120,20 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 	}
 	fmt.Printf("Clearing active version v%s before uninstall (no fallback installed).\n", active)
 	return nil
+}
+
+func nextInstalledFallback(installed []string, active string, targetSet map[string]struct{}) (string, bool) {
+	for _, candidate := range installed {
+		normalized := normalizeVersionSpec(candidate)
+		if normalized == "" || normalized == active {
+			continue
+		}
+		if _, removing := targetSet[normalized]; removing {
+			continue
+		}
+		return normalized, true
+	}
+	return "", false
 }
 
 func isInstalledInList(installed []string, version string) bool {

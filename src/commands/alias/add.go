@@ -18,6 +18,8 @@ var (
 		"alpha":      true, // Reserved for future
 		"beta":       true, // Reserved for future
 		"prerelease": true, // Reserved for future
+		"link":       true,
+		"shim":       true,
 	}
 )
 

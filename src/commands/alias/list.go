@@ -30,6 +30,7 @@ func (c *List) Run() error {
 		t = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	}
 
+	count := 0
 	for _, pair := range raw.([]string) {
 		parts := strings.SplitN(pair, "=", 2)
 
@@ -49,6 +50,8 @@ func (c *List) Run() error {
 		}
 
 		if len(parts) == 2 {
+			count++
+
 			if c.JSON {
 				data[parts[0]] = parts[1]
 			} else {
@@ -70,6 +73,10 @@ func (c *List) Run() error {
 
 	if t != nil {
 		t.Flush()
+	}
+
+	if count == 0 {
+		fmt.Println("No aliases available.")
 	}
 
 	return nil

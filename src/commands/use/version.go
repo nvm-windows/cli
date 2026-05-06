@@ -24,23 +24,18 @@ type Version struct {
 
 func (s *Version) Run() error {
 	requestedVersion := s.Version[0]
-	var installed bool
-	var version string
+	cfg := settings.Global()
+	autoInstall := cfg.AutoInstall
+	if s.Install {
+		autoInstall = true
+	}
+	if s.NoInstall {
+		autoInstall = false
+	}
 
-	// Local checks first — no network.
-	if latest, ok := resolver.LatestInstalledMatch(requestedVersion); ok {
-		installed = true
-		version = latest
-	} else if v, ok := resolver.CheckInstalledLocally(requestedVersion); ok {
-		installed = true
-		version = v
-	} else {
-		// Fall back to resolver (needed for aliases like lts/latest and auto-install).
-		var err error
-		installed, version, err = resolver.IsInstalled(requestedVersion)
-		if err != nil {
-			return err
-		}
+	installed, version, err := resolver.ResolveInstalledVersion(requestedVersion, autoInstall)
+	if err != nil {
+		return err
 	}
 
 	// If the version is not installed, install it
@@ -52,7 +47,6 @@ func (s *Version) Run() error {
 		} else if s.NoInstall {
 			shouldInstall = false
 		} else {
-			cfg := settings.Global()
 			if cfg.AutoInstall {
 				if cfg.AutoInstallPrompt {
 					ok, err := prompt.Confirm(fmt.Sprintf("Version v%s is not installed. Would you like to install it now?", version), "y")
