@@ -140,8 +140,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
 
       - name: Cache qgo binary
         uses: actions/cache@v4
