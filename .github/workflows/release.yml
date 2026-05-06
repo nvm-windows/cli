@@ -30,6 +30,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Common Modules
+        shell: pwsh
+        run: |
+          if (Test-Path "..\common") {
+            Remove-Item "..\common" -Recurse -Force
+          }
+          git clone --depth 1 "https://github.com/nvm-windows/common.git" "..\common"
+
       - name: Detect Manifest Version
         id: detect
         shell: bash
