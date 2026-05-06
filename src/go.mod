@@ -2,31 +2,31 @@ module nvm
 
 go 1.26.2
 
-replace common/http v1.0.0 => ../../common/http
+replace common/http v1.0.0 => ../common/http
 
-replace common/resolver v1.0.0 => ../../common/resolver
+replace common/resolver v1.0.0 => ../common/resolver
 
-replace common/registry v1.0.0 => ../../common/registry
+replace common/registry v1.0.0 => ../common/registry
 
-replace common/preferences v1.0.0 => ../../common/preferences
+replace common/preferences v1.0.0 => ../common/preferences
 
-replace common/settings v1.0.0 => ../../common/settings
+replace common/settings v1.0.0 => ../common/settings
 
-replace common/inspect v1.0.0 => ../../common/inspect
+replace common/inspect v1.0.0 => ../common/inspect
 
-replace common/fs v1.0.0 => ../../common/fs
+replace common/fs v1.0.0 => ../common/fs
 
-replace common/eventlog v1.0.0 => ../../common/eventlog
+replace common/eventlog v1.0.0 => ../common/eventlog
 
-replace common/system v1.0.0 => ../../common/system
+replace common/system v1.0.0 => ../common/system
 
-replace common/config v1.0.0 => ../../common/config
+replace common/config v1.0.0 => ../common/config
 
-replace common/notify v1.0.0 => ../../common/notify
+replace common/notify v1.0.0 => ../common/notify
 
-replace common/proxy v1.0.0 => ../../common/proxy
+replace common/proxy v1.0.0 => ../common/proxy
 
-replace common/version_support v1.0.0 => ../../common/version_support
+replace common/version_support v1.0.0 => ../common/version_support
 
 require (
 	common/config v1.0.0
