@@ -139,13 +139,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout Common Modules
+      - name: Checkout Common Repository
+        uses: actions/checkout@v6
+        with:
+          repository: nvm-windows/common
+          token: ${{ secrets.NVM_WINDOWS_COMMON_REPO_TOKEN }}
+          path: common
+          fetch-depth: 1
+
+      - name: Link Common Modules To Expected Path
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.NVM_WINDOWS_COMMON_REPO_TOKEN }}")) {
+            Write-Error "Secret NVM_WINDOWS_COMMON_REPO_TOKEN is required to read nvm-windows/common."
+            exit 1
+          }
+
           if (Test-Path "..\common") {
             Remove-Item "..\common" -Recurse -Force
           }
-          gh repo clone nvm-windows/common "..\common" -- --depth 1
+
+          New-Item -ItemType Junction -Path "..\common" -Target ".\common" | Out-Null
 
       - name: Set up Go
         uses: actions/setup-go@v6
