@@ -47,22 +47,22 @@ QuikGo adds:
 
 Developers only need to remember a few basic commands:
 
-| Basic Commands            | Description                                                  |
-| ------------------------- | :----------------------------------------------------------- |
-| [`qgo init`](#init)        | Initialize a new app (with templates).                       |
-| [`qgo run`](#run--build)   | Like `go run`, but reads configuration from JSON.          |
-| [`qgo build`](#run--build) | Like `go build` but reads configuration from JSON.         |
-| [`qgo test`](#test)        | Run the test suite with TAP/formatted output (pretty tests). |
+| Basic Commands|Description|
+|-|:-|
+|[`qgo init`](#init)|Initialize a new app (with templates).|
+|[`qgo run`](#run--build)|Like `go run`, but reads configuration from JSON.|
+|[`qgo build`](#run--build)|Like `go build` but reads configuration from JSON.|
+|[`qgo test`](#test)|Run the test suite with TAP/formatted output (pretty tests).|
 
 Some convenience commands are available as well.
 
-| More Commands                | Description                                             |
-| ---------------------------- | :------------------------------------------------------ |
-| [`qgo bump`](#bump)           | Bump the version number.                                |
-| [`qgo todo`](#todo)           | Output all the TODO items in the code base.             |
-| [`qgo exec`](#exec)           | Run local scripts found in the manifest.                |
-| [`qgo kill`](#kill)           | Kill a local process by executable name.                |
-| [`qgo uninstall`](#uninstall) | Uninstall apps that were installed with `go install`. |
+|More Commands|Description|
+|-|:-|
+|[`qgo bump`](#bump)|Bump the version number.|
+|[`qgo todo`](#todo)| Output all the TODO items in the code base.|
+|[`qgo exec`](#exec)| Run local scripts found in the manifest.|
+|[`qgo kill`](#kill)| Kill a local process by executable name.|
+|[`qgo uninstall`](#uninstall)|Uninstall apps that were installed with `go install`.|
 
 QuikGo simplifies development environments with:
 
@@ -75,8 +75,6 @@ QuikGo simplifies development environments with:
 ```sh
 go install github.com/quikdev/go/cmd/qgo@latest
 ```
-
-TODO: _Alternatively, download the latest binary release and add it to your `PATH`._
 
 ### Automation
 
@@ -139,14 +137,6 @@ This example assumes several build variables exist in the main module (`descript
 
 By leveraging a `manifest.json` file, these parameters can be committed alongside Go source code, allowing a portable/standard experience for building/running Go apps.
 
-### Use Cases
-
-#### Antivirus
-
-Consider the standard `go run myapp.go` command. This produces a temporary executable with a unique filename before running the temporary executable. Windows Defender and other antivirus suites can block these temporary files, throwing `Access denied.` errors (often sporadically). Exceptions can be made to allow-list executables in these tools, but they expect the executable to have a consistent name. As a result, it is easier to run `go build myapp.go && myapp.exe` so `myapp.exe` can be allow-listed with the antivirus suite. This is not intuitive or easy to remember when you're used to just running `go run myapp.go`. Plus, it's annoying to take time specifically to allow-list a particular executable. Most developers bypass this by allowing all executables, which defeats the purpose of these protections.
-
-QuikGo automates this process, guaranteeing the same file name is used for each build while maintaining the simplicity of `go run`.
-
 **_For Windows Users_**
 
 Typically, Windows will grant access after denying if the same file is explicitly run a few times. There are scenarios where you may need to exclude it from Windows Defender though.
@@ -163,28 +153,6 @@ Alternatively, use the GUI:
 2. Go to Virus & threat protection.
 3. Under Exclusions, select Add or remove exclusions.
 4. Select Add an exclusion, and choose the file you want to exclude.
-
-#### Versioning
-
-Consider `go build -ldflags "-X 'main.version=1.0.0'" myapp.go && myapp.exe`. Dynamically specifying a version number (as opposed to hard-coding) is a common development need, which is easily solved using ldflags. This isn't something you want to type over and over though. Automating this delegates the versioning logic to the manifest file, so you only need to run `qgo build` instead of this big command.
-
-# Commands
-
-## Init
-
-The `init` command provides a simple wizard to setup a new Go project. It will generate the appropriate `go.mod`, `go.work`, `manifest.json`, `README.md`, a license file, and starter code with unit tests. The wizard provides options to generate projects with the [recommended code layouts](https://go.dev/doc/modules/layout#package-or-command-with-supporting-packages) laid out by the Go team. It can also configure your git repo (optional).
-
-```sh
-Usage: qgo init
-
-Setup a new Go module or application
-
-Flags:
-  -h, --help         Show context-sensitive help.
-  -v, --version      Display the QuikGo version.
-  -o, --overwrite    If a project already exist, overwrite with no backup
-                     and no prompt.
-```
 
 ## Run & Build
 
@@ -355,22 +323,6 @@ To use the dev profile additions, run `qgo run --profile dev`. This will behave 
 }
 ```
 
-### Live Reload
-
-The live reload feature monitors `./*.go` and `./**/*.go` by default.
-
-> Two patterns are used instead of `**/*.go` because Go's `filepath.Glob` capabilities do not recognize this pattern properly.
-
-The project will attempt to rebuild and re-run itself when a file is created, changed, or removed. In the WASM test environment, the browser will automatically refresh when the new `.wasm` is available.
-
-This can be disabled by setting `"livereload": []` in the package/manifest, or it can be customized with the desired paths using [glob patterns](https://en.wikipedia.org/wiki/Glob_(programming)).
-
-### Compressing with UPX
-
-The `--compress` or `-c` flags can be passed to the build command to use [upx](https://upx.github.io/) (if installed) to reduce the file size of executables. Alternatively, configure `"compress": true` or `"upx": true` in the `manifest.json` file. The following screenshot was taken using `"compress": true` in the project's `manifest.json` file.
-
-![1708985377290](image/README/1708985377290.png)
-
 ### "Pre" and "Post" Scripts
 
 `PreBuild`, `PreRun`, `PostBuild`, and `PostRun` are available flags that can be defined one or more times. Additionally, each of these can be specified in the `manifest.json` (all lowercase) as a string or array of strings containing commands to execute before/after a build/run.
@@ -378,24 +330,6 @@ The `--compress` or `-c` flags can be passed to the build command to use [upx](h
 > NOTE: `PostBuild` will **NOT** run after a build called with the `run` command. This limitation may be lifted in the future.
 
 > NOTE: `PostBuild` and `PostRun` are not available when running web assemblies with the live development server.
-
-### Building Web Assemblies (WASM)
-
-Web assembly generation is a little different from common Go applications. The `compress` method, which uses [upx](https://upx.github.io/), and some other minification features cannot be applied to web assemblies. These are automatically ignored.
-
-By default, the standard Go toolchain is used to compile WASM files. The templates generated by the `init` method support Go's WASM build capabilities. Go currently generates fairly large WASM files, with the smallest being ~2MB (average ~10MB). The Go team indicates work is being performed to reduce these file sizes, but there is no estimate when this work will be complete.
-
-For users who are sensitive to the file size, [tinygo](https://tinygo.org/) offers an option that can dramatically reduce file sizes (~10kb). The code syntax is unique to tinygo. QuikGo does _not_ generate tinygo templates, but QuikGo does support using tinygo to build web assemblies. In other words, it's up to you to install tinygo and figure out the code, but QuikGo can still build it for you. Please note that at this time, QuikGo only adds `-target=wasm` (not wasi). We'd be open to a PR adding functionality to specify the wasi/wasm output format.
-
-There are two ways to use `tinygo`. First, supply the `--tiny` flag to the build process, i.e. `qgo build --tiny`. The other option is to add `"tiny": true` to the `mainfest.json`, then run `qo build`.
-
-### Running Web Assemblies (WASM)
-
-Unlike Go, web assemblies can be run in different environments, such as Node.js, Deno, Bun, and browsers. Since most WASM targets the browser, QuikGo attempts to make it simple to run a WASM in the browser. Running `qgo run` on a web assembly project will build and launch a standalone static HTTP test server using the project's `bin` directory as the source. It will automatically open your browser to the appropriate URL.
-
-![1708977567334](image/README/1708977567334.png)
-
-![1708977713724](image/README/1708977713724.png)
 
 ## Test
 
@@ -413,10 +347,6 @@ Flags:
 ```
 
 The test command will run the test suite(s) the same way `go test` would, with a few differences. By default, test results will be converted to [TAP](https://testanything.org) format and output with pretty-printing (spec format).
-
-> _The screen captures were taken from a JavaScript project formatted with [tapfmt](https://github.com/coreybutler/tapfmt), which is the underlying TAP formatting engine used in qgo._
-
-![1708227334872](image/README/1708227334872.png)
 
 Pretty-printing can be disabled if you prefer to use an alternative TAP renderer. The raw format would be available as:
 
@@ -577,22 +507,6 @@ This command will kill all running processes by name. For example, `qgo kill mya
 Running `qgo kill` without specifying an executable will attempt to identify the executable that would be generated in a `qgo build` process (i.e extracts this name from the manifest.json).
 
 While it is not recommended, it is possible to set `"prekill": true` in `manifest.json` to run this command before `qgo run`.
-
-## Uninstall
-
-The `qgo uninstall` command is a convenience utility for "uninstalling" applications that were installed using `go install` (i.e. like QuikGo itself).
-
-Go does not provide a way to do this. To remove an installed app, you need to know whether it is stored in the `GOBIN` or `GOPATH` root, which can vary depending on how Go is setup on a computer.
-
-It's easy to forget where a utility is installed, especially when it is not defined on the system or user `PATH`. Developers often know the name of the app, but forget where it is stored.
-
-QuikGo simplifies this. Run `qgo uninstall [app_name]` to uninstall a specific application. If you do not know the specific name, run `qgo uninstall` to be prompted with a list of all available applications. For example:
-
-![1709090253159](image/README/1709090253159.png)
-
-The uninstall process is very basic. It finds the file and deletes it (with a warning).
-
-For programmatic use, pass the `--no-warn` flag if you want to skip the warning/prompt. For example, `qgo uninstall --no-warn myapp`.
 
 ## Full List of Manifest Options
 

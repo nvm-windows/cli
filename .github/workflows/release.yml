@@ -1,0 +1,225 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/manifest.json
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-version:
+    name: Identify Release Version
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      should_release: ${{ steps.detect.outputs.should_release }}
+      version: ${{ steps.detect.outputs.version }}
+      tag: ${{ steps.detect.outputs.tag }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Detect Manifest Version
+        id: detect
+        shell: pwsh
+        run: |
+          $manifest = Get-Content "src/manifest.json" -Raw | ConvertFrom-Json
+          $version = "$($manifest.version)"
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            Write-Error "Unable to read src/manifest.json version"
+            exit 1
+          }
+
+          $tag = $version
+          if (-not $tag.StartsWith("v")) {
+            $tag = "v$tag"
+          }
+
+          $legacyTag = $version
+          $shouldRelease = $true
+
+          gh api "/repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" --silent *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $shouldRelease = $false
+          }
+
+          if ($legacyTag -ne $tag) {
+            gh api "/repos/$env:GITHUB_REPOSITORY/git/ref/tags/$legacyTag" --silent *> $null
+            if ($LASTEXITCODE -eq 0) {
+              $shouldRelease = $false
+            }
+          }
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "should_release=$($shouldRelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          if (-not $shouldRelease) {
+            Write-Host "No release needed. Manifest version '$version' already has a matching tag."
+          } else {
+            Write-Host "Release needed for manifest version '$version'."
+          }
+
+  create-release:
+    name: Create Tag + Release
+    needs: detect-version
+    if: ${{ needs.detect-version.outputs.should_release == 'true' }}
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.detect-version.outputs.version }}
+      TAG: ${{ needs.detect-version.outputs.tag }}
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Publish Metadata
+        id: meta
+        shell: pwsh
+        run: |
+          "version=$env:VERSION" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$env:TAG" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Create Tag
+        shell: pwsh
+        run: |
+          gh api -X POST "/repos/$env:GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$env:TAG" -f sha="$env:GITHUB_SHA"
+
+      - name: Create Release
+        shell: pwsh
+        run: |
+          gh release create "$env:TAG" --title "$env:TAG" --notes "Automated release for version $env:VERSION"
+
+  build-assets:
+    name: Build And Upload (${{ matrix.arch }})
+    needs:
+      - detect-version
+      - create-release
+    if: ${{ needs.detect-version.outputs.should_release == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GOBIN: ${{ github.workspace }}\go-bin
+      QGO_VERSION: 1.2.8
+      VERSION: ${{ needs.detect-version.outputs.version }}
+      TAG: ${{ needs.detect-version.outputs.tag }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Cache qgo binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOBIN }}
+          key: qgo-${{ runner.os }}-${{ runner.arch }}-${{ env.QGO_VERSION }}
+
+      - name: Install qgo if not cached
+        shell: pwsh
+        run: |
+          if (!(Test-Path "$env:GOBIN\qgo.exe")) {
+            go install github.com/quikdev/go/cmd/qgo@v${{ env.QGO_VERSION }}
+          } else {
+            Write-Host "using cached qgo binary"
+          }
+
+      - name: Add qgo to PATH
+        shell: pwsh
+        run: |
+          echo "${env:GOBIN}" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Binary + Package Asset
+        shell: pwsh
+        working-directory: src
+        run: |
+          New-Item -ItemType Directory -Force -Path "..\artifacts" | Out-Null
+
+          $env:GOOS = "windows"
+          $env:GOARCH = "${{ matrix.arch }}"
+          qgo build --no-cache
+
+          $assetDir = "..\artifacts\${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
+
+          Copy-Item "..\..\bin\nvm.exe" "$assetDir\nvm.exe" -Force
+
+          $hash = (Get-FileHash "$assetDir\nvm.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash *nvm.exe" | Out-File -FilePath "$assetDir\SHASUM.txt" -Encoding ascii -NoNewline
+
+          Compress-Archive -Path "$assetDir\nvm.exe", "$assetDir\SHASUM.txt" -DestinationPath "..\artifacts\nvm-${{ matrix.arch }}.zip" -Force
+
+      - name: Upload Release Assets
+        shell: pwsh
+        run: |
+          gh release upload "$env:TAG" "artifacts\nvm-${{ matrix.arch }}.zip" --clobber
+
+  rollback:
+    name: Rollback Failed Release
+    needs:
+      - detect-version
+      - create-release
+      - build-assets
+    if: ${{ failure() && needs.detect-version.outputs.should_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.detect-version.outputs.tag }}
+
+    steps:
+      - name: Remove Release Then Tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_id=""
+          if release_id=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.id' 2>/dev/null); then
+            if [[ -n "${release_id}" && "${release_id}" != "null" ]]; then
+              gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+            fi
+          fi
+
+          gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" || true
+
+  no-op:
+    name: No Release Needed
+    needs: detect-version
+    if: ${{ needs.detect-version.outputs.should_release != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip
+        run: |
+          echo "Manifest version '${{ needs.detect-version.outputs.version }}' already has a matching tag."

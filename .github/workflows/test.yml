@@ -34,12 +34,12 @@ jobs:
         with:
           filters: |
             nvm:
-              - 'nvm/**'
-            shim:
-              - 'shim/**'
+              - 'src/**'
             github:
               - '.github/**'
               - 'LICENSE'
+              - 'src/manifest.json'
+              - 'src/winres/**'
 
       - name: Build App Matrix
         id: compute
@@ -49,13 +49,10 @@ jobs:
           github_changed=false
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            apps+=("nvm" "shim")
+            apps+=("nvm")
           else
             if [[ "${{ steps.changes.outputs.nvm }}" == "true" ]]; then
               apps+=("nvm")
-            fi
-            if [[ "${{ steps.changes.outputs.shim }}" == "true" ]]; then
-              apps+=("shim")
             fi
             if [[ "${{ steps.changes.outputs.github }}" == "true" ]]; then
               github_changed=true
@@ -75,14 +72,14 @@ jobs:
           echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
 
   github-guard:
-    name: Guard .github Changes
+    name: Guard Sensitive Changes
     needs: detect
     if: ${{ github.event_name == 'pull_request' && needs.detect.outputs.github_changed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Validate Team Membership For .github Changes
+      - name: Validate Team Membership For Sensitive Changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ORG: ${{ github.repository_owner }}
@@ -102,7 +99,7 @@ jobs:
             exit 0
           fi
 
-            echo "::error::Changes to .github/** and LICENSE are restricted to ${ORG}/${TEAM_SLUG} members."
+          echo "::error::Changes to .github/** and LICENSE are restricted to ${ORG}/${TEAM_SLUG} members."
           echo "${TEAM_SLUG} team membership verification failed for user: ${ACTOR} (HTTP ${status})."
           cat /tmp/team_check.json || true
           exit 1
@@ -166,6 +163,6 @@ jobs:
     steps:
       - name: Fail
         run: |
-          echo "No changes detected under nvm/ or shim/."
+          echo "No changes detected under src/."
           echo "This PR does not contribute changes to a testable app path."
           exit 1
