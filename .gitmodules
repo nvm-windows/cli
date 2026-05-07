@@ -1,6 +1,6 @@
 [submodule "src/nvm/common"]
 	path = src/nvm/common
-	url = git@github.com:nvm-windows/common.git
+	url = https://github.com/nvm-windows/common.git
 [submodule "common"]
 	path = common
-	url = git@github.com:nvm-windows/common.git
+	url = https://github.com/nvm-windows/common.git
