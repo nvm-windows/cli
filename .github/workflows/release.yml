@@ -149,11 +149,13 @@ jobs:
             exit 1
           }
 
+          $commonTarget = (Resolve-Path ".\common").Path
+
           if (Test-Path "..\common") {
             Remove-Item "..\common" -Recurse -Force
           }
 
-          New-Item -ItemType Junction -Path "..\common" -Target ".\common" | Out-Null
+          New-Item -ItemType Junction -Path "..\common" -Target $commonTarget | Out-Null
 
       - name: Set up Go
         uses: actions/setup-go@v6
