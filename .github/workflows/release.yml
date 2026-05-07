@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - src/manifest.json
+      - .gitmodules
       - .github/workflows/release.yml
   workflow_dispatch:
 
