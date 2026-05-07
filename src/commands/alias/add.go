@@ -1,8 +1,10 @@
 package alias
 
 import (
+	"common/notify"
 	"common/resolver"
 	"common/settings"
+	"common/system"
 	"fmt"
 	"strings"
 )
@@ -95,7 +97,11 @@ func (c *Add) Run() error {
 		return fmt.Errorf("failed to save alias: %v", err)
 	}
 
-	fmt.Printf("\"%s\" now refers to v%s\n", c.Name, version)
+	msg := fmt.Sprintf("%q now refers to v%s", c.Name, version)
+	fmt.Println(msg)
+	if !system.IsAppInForeground() {
+		go notify.Send(settings.AppId, "", msg)
+	}
 
 	return nil
 }

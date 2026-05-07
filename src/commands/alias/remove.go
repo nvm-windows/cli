@@ -1,7 +1,9 @@
 package alias
 
 import (
+	"common/notify"
 	"common/settings"
+	"common/system"
 	"fmt"
 	"strings"
 )
@@ -50,12 +52,15 @@ func (c *Remove) Run() error {
 		return fmt.Errorf("failed to save updated aliases: %v", err)
 	}
 
-	fmt.Printf("%d alias%s removed successfully.\n", count, func() string {
-		if count == 1 {
-			return ""
-		}
-		return "es"
-	}())
+	suffix := ""
+	if count != 1 {
+		suffix = "es"
+	}
+	msg := fmt.Sprintf("%d alias%s removed successfully.", count, suffix)
+	fmt.Println(msg)
+	if !system.IsAppInForeground() {
+		go notify.Send(settings.AppId, "", msg)
+	}
 
 	return nil
 }

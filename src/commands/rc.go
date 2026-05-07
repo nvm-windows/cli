@@ -2,8 +2,10 @@ package commands
 
 import (
 	"bytes"
+	"common/notify"
 	"common/resolver"
 	"common/settings"
+	"common/system"
 	"encoding/json"
 	"fmt"
 	"nvm/installer"
@@ -167,14 +169,22 @@ func (c *RunCommand) Run() error {
 			return fmt.Errorf("failed to write package.json: %w", err)
 		}
 
-		fmt.Printf("Successfully set %s Node.js engine to Node.js v%s (with npm v%s)\n", c.File, node_version, npm_version)
+		msg := fmt.Sprintf("Successfully set %s Node.js engine to Node.js v%s (with npm v%s)", c.File, node_version, npm_version)
+		fmt.Println(msg)
+		if !system.IsAppInForeground() {
+			go notify.Send(settings.AppId, "", msg)
+		}
 
 	default:
 		if err := os.WriteFile(c.File, []byte(node_version), 0644); err != nil {
 			return fmt.Errorf("failed to write version to %s: %w", c.File, err)
 		}
 
-		fmt.Printf("Successfully set %s Node.js version to v%s\n", c.File, node_version)
+		msg := fmt.Sprintf("Successfully set %s Node.js version to v%s", c.File, node_version)
+		fmt.Println(msg)
+		if !system.IsAppInForeground() {
+			go notify.Send(settings.AppId, "", msg)
+		}
 	}
 
 	return nil

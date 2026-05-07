@@ -1,10 +1,13 @@
 package installer
 
 import (
+	"common/notify"
 	"common/resolver"
 	"common/settings"
+	"common/system"
 	"fmt"
 	"nvm/log"
+	"nvm/prompt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,7 +23,6 @@ type UninstallConfig struct {
 	Versions   []string
 	ClearCache bool
 	CacheDir   string
-	Range      bool
 }
 
 func Uninstall(cfg UninstallConfig) error {
@@ -28,17 +30,42 @@ func Uninstall(cfg UninstallConfig) error {
 		return nil
 	}
 
+	if err := validateWildcardSpecs(cfg.Versions); err != nil {
+		return err
+	}
+
 	defer updateSystemVersions()
 	defer healInstalledVersionVisibility()
+
+	// Check if user is trying to uninstall all versions
+	if len(cfg.Versions) == 1 {
+		spec := strings.TrimSpace(cfg.Versions[0])
+		if spec == "*" || strings.EqualFold(spec, "all") {
+			confirmed, err := prompt.Confirm("WARNING: This will remove all versions of Node.js from your system. This action is irreversible. Continue?", "n")
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return nil
+			}
+		}
+	}
+
+	var notifyMu sync.Mutex
+	var notifyMsgs []string
+	record := func(msg string) {
+		fmt.Print(msg)
+		notifyMu.Lock()
+		notifyMsgs = append(notifyMsgs, strings.TrimRight(msg, "\n"))
+		notifyMu.Unlock()
+	}
 
 	var wg sync.WaitGroup
 	var failures atomic.Int32
 	var skipped atomic.Int32
 
-	targets := cfg.Versions
-	if cfg.Range {
-		targets = expandUninstallTargets(cfg.Versions, &skipped)
-	}
+	// Expand any wildcard targets (e.g., "22.*", "22.1.*")
+	targets := expandUninstallTargets(cfg.Versions, &skipped, record)
 
 	targetSet := make(map[string]struct{}, len(targets))
 	for _, version := range targets {
@@ -47,7 +74,7 @@ func Uninstall(cfg UninstallConfig) error {
 			targetSet[normalized] = struct{}{}
 		}
 	}
-	if err := prepareActiveForUninstall(targetSet); err != nil {
+	if err := prepareActiveForUninstall(targetSet, record); err != nil {
 		return err
 	}
 
@@ -55,7 +82,7 @@ func Uninstall(cfg UninstallConfig) error {
 	for _, version := range targets {
 		if _, seen := dedupe[version]; !seen {
 			wg.Add(1)
-			go uninstallVersion(version, cfg, &wg, &failures)
+			go uninstallVersion(version, cfg, &wg, &failures, record)
 			dedupe[version] = true
 		}
 	}
@@ -70,10 +97,14 @@ func Uninstall(cfg UninstallConfig) error {
 		return nil
 	}
 
+	if len(notifyMsgs) > 0 && !system.IsAppInForeground() {
+		go notify.Send(settings.AppId, "", strings.Join(notifyMsgs, "; "))
+	}
+
 	return reshim()
 }
 
-func prepareActiveForUninstall(targetSet map[string]struct{}) error {
+func prepareActiveForUninstall(targetSet map[string]struct{}, record func(string)) error {
 	cfg := settings.Global()
 	active := normalizeVersionSpec(cfg.ActiveVersion)
 	if active == "" {
@@ -95,7 +126,7 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 				if err := settings.Put("last_version", ""); err != nil {
 					return err
 				}
-				fmt.Printf("Switching default version from v%s to v%s before uninstall.\n", active, last)
+				record(fmt.Sprintf("Switching default version from v%s to v%s before uninstall.\n", active, last))
 				return nil
 			}
 		}
@@ -108,7 +139,7 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 		if err := settings.Put("last_version", ""); err != nil {
 			return err
 		}
-		fmt.Printf("Switching active version from v%s to v%s before uninstall.\n", active, fallback)
+		record(fmt.Sprintf("Switching active version from v%s to v%s before uninstall.\n", active, fallback))
 		return nil
 	}
 
@@ -118,7 +149,7 @@ func prepareActiveForUninstall(targetSet map[string]struct{}) error {
 	if err := settings.Put("last_version", ""); err != nil {
 		return err
 	}
-	fmt.Printf("Clearing active version v%s before uninstall (no fallback installed).\n", active)
+	record(fmt.Sprintf("Clearing active version v%s before uninstall (no fallback installed).\n", active))
 	return nil
 }
 
@@ -149,13 +180,13 @@ func isInstalledInList(installed []string, version string) bool {
 	return false
 }
 
-func expandUninstallTargets(inputs []string, skipped *atomic.Int32) []string {
+func expandUninstallTargets(inputs []string, skipped *atomic.Int32, record func(string)) []string {
 	installed := scanInstalledVersions()
 	if len(installed) == 0 {
 		targets := make([]string, 0, len(inputs))
 		for _, input := range inputs {
-			if isRangeSpec(input) {
-				fmt.Printf("SKIPPED v%s (no installed versions match range)\n", strings.TrimSpace(input))
+			if isWildcardSpec(input) || isRangeSpec(input) {
+				record(fmt.Sprintf("SKIPPED v%s (no installed versions match range)\n", strings.TrimSpace(input)))
 				skipped.Add(1)
 				continue
 			}
@@ -166,6 +197,18 @@ func expandUninstallTargets(inputs []string, skipped *atomic.Int32) []string {
 
 	targets := make([]string, 0, len(inputs))
 	for _, input := range inputs {
+		// Check for wildcard specs like "22.*" or "22.1.*"
+		if isWildcardSpec(input) {
+			matches := matchWildcardRange(input, installed)
+			if len(matches) == 0 {
+				record(fmt.Sprintf("SKIPPED v%s (no installed versions match range)\n", strings.TrimSpace(input)))
+				skipped.Add(1)
+				continue
+			}
+			targets = append(targets, matches...)
+			continue
+		}
+
 		spec := normalizeVersionSpec(input)
 		if !isRangeSpec(spec) {
 			targets = append(targets, input)
@@ -174,7 +217,7 @@ func expandUninstallTargets(inputs []string, skipped *atomic.Int32) []string {
 
 		matches := matchInstalledRange(spec, installed)
 		if len(matches) == 0 {
-			fmt.Printf("SKIPPED v%s (no installed versions match range)\n", strings.TrimSpace(input))
+			record(fmt.Sprintf("SKIPPED v%s (no installed versions match range)\n", strings.TrimSpace(input)))
 			skipped.Add(1)
 			continue
 		}
@@ -201,6 +244,91 @@ func isRangeSpec(version string) bool {
 		}
 	}
 	return true
+}
+
+func isWildcardSpec(version string) bool {
+	return strings.Contains(version, "*")
+}
+
+func validateWildcardSpecs(inputs []string) error {
+	for _, input := range inputs {
+		raw := strings.TrimSpace(input)
+		if raw == "" || !strings.Contains(raw, "*") {
+			continue
+		}
+		if raw == "*" {
+			continue
+		}
+
+		spec := strings.TrimPrefix(strings.TrimPrefix(raw, "v"), "V")
+		parts := strings.Split(spec, ".")
+
+		// Only major.minor.* or major.* are valid wildcard forms.
+		if len(parts) != 2 && len(parts) != 3 {
+			return invalidWildcardErr(raw)
+		}
+
+		if parts[0] == "" || strings.Contains(parts[0], "*") {
+			return invalidWildcardErr(raw)
+		}
+		if _, err := strconv.Atoi(parts[0]); err != nil {
+			return invalidWildcardErr(raw)
+		}
+
+		if len(parts) == 2 {
+			if parts[1] != "*" {
+				return invalidWildcardErr(raw)
+			}
+			continue
+		}
+
+		if parts[1] == "" || strings.Contains(parts[1], "*") {
+			return invalidWildcardErr(raw)
+		}
+		if _, err := strconv.Atoi(parts[1]); err != nil {
+			return invalidWildcardErr(raw)
+		}
+		if parts[2] != "*" {
+			return invalidWildcardErr(raw)
+		}
+	}
+
+	return nil
+}
+
+func invalidWildcardErr(raw string) error {
+	return fmt.Errorf("invalid wildcard version %q", raw)
+}
+
+func matchWildcardRange(spec string, installed []string) []string {
+	// Remove any leading 'v' or 'V' prefix
+	spec = strings.TrimPrefix(strings.TrimPrefix(spec, "v"), "V")
+
+	// Split by dot to parse the version spec
+	parts := strings.Split(spec, ".")
+	if len(parts) == 0 || len(parts) > 3 {
+		return nil
+	}
+
+	// Check if last part is a wildcard
+	if parts[len(parts)-1] != "*" {
+		return nil // Not a wildcard spec
+	}
+
+	// Build the prefix to match (everything before the wildcard)
+	prefix := strings.Join(parts[:len(parts)-1], ".")
+	if prefix != "" {
+		prefix += "."
+	}
+
+	matches := make([]string, 0)
+	for _, version := range installed {
+		normalized := normalizeVersionSpec(version)
+		if strings.HasPrefix(normalized, prefix) {
+			matches = append(matches, version)
+		}
+	}
+	return matches
 }
 
 func matchInstalledRange(spec string, installed []string) []string {
@@ -232,7 +360,7 @@ func matchInstalledRange(spec string, installed []string) []string {
 	return matches
 }
 
-func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, failures *atomic.Int32) {
+func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, failures *atomic.Int32, record func(string)) {
 	defer wg.Done()
 
 	requestedSpec := normalizeVersionSpec(version)
@@ -304,7 +432,7 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 	}
 
 	if !dirExists && !keyExists {
-		fmt.Printf("SKIPPED v%s (not installed)\n", node_version)
+		record(fmt.Sprintf("SKIPPED v%s (not installed)\n", node_version))
 		return
 	}
 
@@ -320,7 +448,7 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 		}
 	}
 
-	fmt.Printf("Uninstalled Node.js v%s\n", node_version)
+	record(fmt.Sprintf("Uninstalled Node.js v%s\n", node_version))
 	log.Logf("Uninstalled Node.js v%s", node_version)
 }
 

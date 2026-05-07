@@ -2,7 +2,9 @@ package cfg
 
 import (
 	"common/config"
+	"common/notify"
 	"common/settings"
+	"common/system"
 	"fmt"
 	"nvm/commands/cfg/utility"
 	"nvm/log"
@@ -92,6 +94,14 @@ func (s *Set) Run() error {
 		if err := utility.DisplaySetting(key, "%s set to:\n%s\n"); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
+	}
+
+	var notifyLines []string
+	for key, value := range input {
+		notifyLines = append(notifyLines, fmt.Sprintf("%s set to %s", key, value))
+	}
+	if len(notifyLines) > 0 && !system.IsAppInForeground() {
+		go notify.Send(settings.AppId, "", strings.Join(notifyLines, ", "))
 	}
 
 	return nil

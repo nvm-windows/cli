@@ -1,8 +1,10 @@
 package use
 
 import (
+	"common/notify"
 	"common/resolver"
 	"common/settings"
+	"common/system"
 	"fmt"
 	"nvm/constant"
 	"nvm/installer"
@@ -161,7 +163,11 @@ func (s *Version) Run() error {
 	}
 
 	log.Logf("Now using Node.js v%s by default", version)
-	fmt.Fprintf(os.Stdout, "Now using Node.js v%s by default.\n", version)
+	msg := fmt.Sprintf("Now using Node.js v%s by default.", version)
+	fmt.Fprintln(os.Stdout, msg)
+	if !system.IsAppInForeground() {
+		go notify.Send(settings.AppId, "", msg)
+	}
 
 	return nil
 }
