@@ -19,10 +19,10 @@ import (
 )
 
 type RunCommand struct {
-	Version     string `arg:"" name:"version" help:"The version to set in the .nvmrc/package.json/etc file." optional:""`
-	File        string `flag:"file" short:"f" help:"Determines which file to write the version to." placeholder:".nvmrc"`
-	AutoInstall bool   `flag:"auto-install" short:"i" help:"Automatically install the version if it's not already installed."`
-	NoInstall   bool   `flag:"no-install" short:"n" help:"Do not automatically install the version if it's not already installed."`
+	Version   string `arg:"" name:"version" help:"The version to set in the .nvmrc/package.json/etc file." optional:""`
+	File      string `flag:"file" short:"f" help:"Determines which file to write the version to." placeholder:".nvmrc"`
+	Install   bool   `flag:"install" short:"i" help:"Automatically install the version if it's not already installed."`
+	NoInstall bool   `flag:"no-install" short:"n" help:"Do not automatically install the version if it's not already installed."`
 }
 
 func (c *RunCommand) Run() error {
@@ -71,7 +71,7 @@ func (c *RunCommand) Run() error {
 	}
 
 	autoInstall := cfg.AutoInstall
-	if c.AutoInstall {
+	if c.Install {
 		autoInstall = true
 	}
 	if c.NoInstall {

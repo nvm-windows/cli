@@ -130,7 +130,7 @@ jobs:
           cache-dependency-path: ${{ matrix.app }}/go.sum
 
       - name: Cache qgo binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.GOBIN }}
           key: qgo-${{ runner.os }}-${{ runner.arch }}-${{ env.QGO_VERSION }}
