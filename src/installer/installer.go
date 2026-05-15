@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"common/notify"
+	"nvm/installer/acl"
 	"nvm/log"
 )
 
@@ -154,6 +155,11 @@ func install(
 	nodeVersion, _, err := resolver.Find(version)
 	if err != nil {
 		status.Alert(fmt.Errorf("FAILED v%s: %v", version, err), false)
+		return
+	}
+
+	if allowed, err := acl.IsAllowedVersion(nodeVersion); !allowed {
+		status.Alert(fmt.Errorf("%v", err), false)
 		return
 	}
 
