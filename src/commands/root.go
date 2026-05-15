@@ -31,6 +31,7 @@ type RootCommand struct {
 	Debug        Doctor        `cmd:"debug" hidden:"true"`
 	Reshim       Reshim        `cmd:"reshim" hidden:"true"`
 	Upgrade      Upgrade       `cmd:"upgrade" help:"Upgrade ${app}." hidden:"true"`
+	Subscribe    Subscribe     `cmd:"subscribe" help:"Subscribe to ${app} updates." hidden:"true"`
 }
 
 type RootCommandWithVersion struct {

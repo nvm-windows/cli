@@ -116,3 +116,26 @@ func getSyncToolPath() (string, error) {
 
 	return sync, nil
 }
+
+type Subscribe struct {
+	Email string `arg:"address" name:"address" help:"The email address to subscribe with." optional:""`
+}
+
+func (c *Subscribe) Run() error {
+	sync, err := getSyncToolPath()
+	if err != nil {
+		return err
+	}
+
+	args := append([]string{"subscribe"})
+	if c.Email != "" {
+		args = append(args, c.Email)
+	}
+
+	cmd := exec.Command(sync, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = filepath.Dir(sync)
+
+	return cmd.Run()
+}

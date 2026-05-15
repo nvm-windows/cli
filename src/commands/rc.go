@@ -21,7 +21,7 @@ import (
 type RunCommand struct {
 	Version   string `arg:"" name:"version" help:"The version to set in the .nvmrc/package.json/etc file." optional:""`
 	File      string `flag:"file" short:"f" help:"Determines which file to write the version to." placeholder:".nvmrc"`
-	Install   bool   `flag:"install" short:"i" help:"Automatically install the version if it's not already installed."`
+	Install   bool   `flag:"install" short:"i" help:"Install the version if it's not already installed."`
 	NoInstall bool   `flag:"no-install" short:"n" help:"Do not automatically install the version if it's not already installed."`
 }
 

@@ -22,16 +22,39 @@ type Version struct {
 	constant.FlagInstall
 	constant.FlagNoInstall
 	constant.ArgVersion
+	Local bool `flag:"local" short:"l" help:"Use the latest installed version matching the specified partial version."`
 }
 
 func (s *Version) Run() error {
 	requestedVersion := s.Version[0]
 	cfg := settings.Global()
+
+	// --local: resolve to the best installed match without touching the network.
+	if s.Local {
+		matched, ok := resolver.LatestInstalledMatch(requestedVersion)
+		if !ok {
+			dots := strings.Count(resolver.NormalizeVersion(requestedVersion), ".")
+			displayVersion := resolver.NormalizeVersion(requestedVersion)
+			switch dots {
+			case 0:
+				displayVersion = displayVersion + ".x.x"
+			case 1:
+				displayVersion = displayVersion + ".x"
+			}
+			return fmt.Errorf("v%s is not installed", displayVersion)
+		}
+		requestedVersion = matched
+	}
+
 	autoInstall := cfg.AutoInstall
 	if s.Install {
 		autoInstall = true
 	}
 	if s.NoInstall {
+		autoInstall = false
+	}
+	// --local always skips installation; the version must already be present.
+	if s.Local {
 		autoInstall = false
 	}
 
@@ -51,7 +74,22 @@ func (s *Version) Run() error {
 		} else {
 			if cfg.AutoInstall {
 				if cfg.AutoInstallPrompt {
-					ok, err := prompt.Confirm(fmt.Sprintf("Version v%s is not installed. Would you like to install it now?", version), "y")
+					// Check whether a different version in the same major (or major.minor)
+					// is already installed, so we can show a more helpful message.
+					vparts := strings.SplitN(version, ".", 3)
+					// Try the most specific scope first (major.minor), then fall back to major.
+					localSpec := vparts[0]
+					localMatch, hasLocal := resolver.LatestInstalledMatch(vparts[0] + "." + vparts[1])
+					if hasLocal {
+						localSpec = vparts[0] + "." + vparts[1]
+					} else {
+						localMatch, hasLocal = resolver.LatestInstalledMatch(vparts[0])
+					}
+					if hasLocal && localMatch != version {
+						fmt.Fprintf(os.Stderr, "Version v%s is not installed, but v%s is.\n", version, localMatch)
+						fmt.Fprintf(os.Stderr, "Run nvm use %s --local to use the latest installed, or specify an exact version.\n", localSpec)
+					}
+					ok, err := prompt.Confirm(fmt.Sprintf("Would you like to install v%s now?", version), "y")
 					if err != nil {
 						return fmt.Errorf("failed to read auto-install prompt: %w", err)
 					}
