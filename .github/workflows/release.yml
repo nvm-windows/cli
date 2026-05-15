@@ -194,7 +194,16 @@ jobs:
 
           $env:GOOS = "windows"
           $env:GOARCH = "${{ matrix.arch }}"
+
+          qgo exec prebuild
+          if ($LASTEXITCODE -ne 0) {
+            throw "qgo exec prebuild failed with exit code $LASTEXITCODE"
+          }
+
           qgo build --no-cache
+          if ($LASTEXITCODE -ne 0) {
+            throw "qgo build --no-cache failed with exit code $LASTEXITCODE"
+          }
 
           $assetDir = "..\artifacts\${{ matrix.arch }}"
           New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
