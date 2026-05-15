@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
+	"common/acl"
 	"common/notify"
-	"nvm/installer/acl"
 	"nvm/log"
 )
 

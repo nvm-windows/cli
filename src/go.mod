@@ -28,7 +28,10 @@ replace common/proxy v1.0.0 => ../../common/proxy
 
 replace common/version_support v1.0.0 => ../../common/version_support
 
+replace common/acl v1.0.0 => ../../common/acl
+
 require (
+	common/acl v1.0.0
 	common/config v1.0.0
 	common/eventlog v1.0.0
 	common/fs v1.0.0
