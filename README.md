@@ -12,12 +12,21 @@ This executable is part of several required for full Node.js verison management.
 
 ## Building from Source
 
+This repository depends on the [common](https://gtihub.com/nvm-windows/common) modules. Clone the common modules repo alongside the CLI. The file structure should look like:
+
+```
+├─ bin (created during build)
+├─ common
+├─ cli
+│  └─ src
+```
+
 This application uses [coreybutler](https://github.com/coreybutler)'s [qgo](https://github.com/quikdev/go) utility.
 
 ```powershell
-git clone https://github.com/nvm-windows/nvm.git
+git clone https://github.com/nvm-windows/cli.git
 cd .\src
 qgo build
 ```
 
-This will generate `.\bin\nvm.exe`.
+This will generate `bin\nvm.exe`.
