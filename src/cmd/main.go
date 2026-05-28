@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"common/license"
 	"common/settings"
 	"common/system"
 	"fmt"
@@ -31,9 +32,8 @@ func main() {
 
 	switch os.Args[1] {
 	case "--register-eventlog":
-		// Invoked by the installer via ShellExec('runas', ...) after files are
-		// written. Runs elevated so it can write to HKLM. Exit code communicates
-		// success/failure back to the installer.
+		// Invoked by optional admin tooling, not by the per-user MSI. Runs
+		// elevated so it can write to HKLM.
 		//
 		// Also cleans up NVM v1 SYSTEM env vars (NVM_HOME, NVM_SYMLINK) and any
 		// references to them in the SYSTEM PATH — this requires the same elevation.
@@ -60,7 +60,7 @@ func main() {
 		}
 		return
 	case "--unregister-eventlog":
-		// Invoked by the uninstaller
+		// Invoked by optional admin tooling, not by the per-user MSI.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
@@ -90,11 +90,24 @@ func main() {
 	}
 
 	settings.Load()
+	currentAccessToken, _ := settings.Get("access_token")
+
+	edition := "community"
+	var tokenErr error
+	if err := license.Activate(); err == nil && license.AccessToken != nil {
+		edition = license.AccessToken.Type()
+	} else {
+		tokenErr = err
+	}
+	updatedAccessToken, _ := settings.Get("access_token")
+	if msg, ok := settings.ChangeAuditMessage("access_token", currentAccessToken, updatedAccessToken); ok {
+		log.Log(msg)
+	}
 
 	cli := kong.Parse(
 		root,
 		kong.Name(name),
-		kong.Description(description+"\nv"+version),
+		kong.Description(fmt.Sprintf("%s\nv%s, %s edition.", description, version, edition)),
 		kong.UsageOnError(),
 		kong.Vars{
 			"app":      name,
@@ -135,6 +148,10 @@ func main() {
 
 			fmt.Fprintln(os.Stdout, helpHint+"\nAdditional help available at https://docs.nvm-windows.com")
 
+			if tokenErr != nil {
+				fmt.Fprintln(os.Stderr, "\nNote: Could not obtain access token.")
+			}
+
 			return nil
 		}),
 	)
@@ -144,4 +161,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

@@ -30,6 +30,10 @@ replace common/version_support v1.0.0 => ../../common/version_support
 
 replace common/acl v1.0.0 => ../../common/acl
 
+replace common/token v1.0.0 => ../../common/token
+
+replace common/license v1.0.0 => ../../common/licensing
+
 require (
 	common/acl v1.0.0
 	common/config v1.0.0
@@ -37,12 +41,14 @@ require (
 	common/fs v1.0.0
 	common/http v1.0.0
 	common/inspect v1.0.0
+	common/license v1.0.0
 	common/notify v1.0.0
 	common/preferences v1.0.0
 	common/registry v1.0.0
 	common/resolver v1.0.0
 	common/settings v1.0.0
 	common/system v1.0.0
+	common/token v1.0.0
 	common/version_support v1.0.0
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/alecthomas/kong v1.14.0
@@ -59,6 +65,7 @@ require (
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/dchest/jsmin v0.0.0-20220218165748-59f39799265f // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
@@ -70,3 +77,36 @@ require (
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

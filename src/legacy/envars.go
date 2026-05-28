@@ -11,7 +11,7 @@ const systemEnvKeyPath = `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\
 
 // RemoveLegacySystemEnvVars removes the NVM v1 SYSTEM-level environment variables
 // (NVM_HOME, NVM_SYMLINK) and any references to them in the SYSTEM PATH.
-// Must be called from an elevated process (the installer UAC step).
+// Must be called from an elevated process such as admin remediation tooling.
 func RemoveSystemEnvVars() error {
 	// Read the variable values before deleting so we can also strip their literal
 	// paths from PATH (in case PATH contains expanded paths rather than %VAR% refs).

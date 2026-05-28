@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"nvm/constant"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ const commandTestRegistryRoot = "HKCU/Software/NVMTest/config_set_test"
 
 func TestMain(m *testing.M) {
 	prefs.ROOT = commandTestRegistryRoot
+	prefs.ROOTS = []string{prefs.ROOT}
 	code := m.Run()
 	exec.Command("reg", "delete", `HKCU\Software\NVMTest`, "/f").Run() //nolint:errcheck
 	os.Exit(code)
@@ -194,6 +196,31 @@ func TestSet_RunLastValueWinsForDuplicateKeys(t *testing.T) {
 	}
 }
 
+func TestSet_RunPersistsAccessTokenAndRedactsOutput(t *testing.T) {
+	const accessToken = "header.payload.signature"
+
+	output, err := captureStdout(t, func() error {
+		return runSetCfg(t, "access_token="+accessToken)
+	})
+	if err != nil {
+		t.Fatalf("Set.Run(access_token) unexpected error: %v", err)
+	}
+
+	if got := getSetting(t, "access_token"); got != accessToken {
+		t.Fatalf("expected access_token to persist raw value, got %v", got)
+	}
+
+	if strings.Contains(output, accessToken) {
+		t.Fatalf("expected access_token output to redact the token, got %q", output)
+	}
+	if !strings.Contains(output, "access_token set to:") {
+		t.Fatalf("expected access_token confirmation output, got %q", output)
+	}
+	if !strings.Contains(output, "(redacted)") {
+		t.Fatalf("expected access_token output to show redaction marker, got %q", output)
+	}
+}
+
 func TestGet_RunSingleValue(t *testing.T) {
 	root := filepath.Join(os.TempDir(), "nvm_config_get_root")
 	defer os.RemoveAll(root)
@@ -211,6 +238,44 @@ func TestGet_RunSingleValue(t *testing.T) {
 
 	if strings.TrimSpace(output) != root {
 		t.Fatalf("expected %q, got %q", root, strings.TrimSpace(output))
+	}
+}
+
+func TestGet_RunRedactsAccessToken(t *testing.T) {
+	const accessToken = "header.payload.signature"
+	if err := runSetCfg(t, "access_token="+accessToken); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	output, err := captureStdout(t, func() error {
+		return (&Get{Name: []string{"access_token"}}).Run()
+	})
+	if err != nil {
+		t.Fatalf("Get.Run(access_token) unexpected error: %v", err)
+	}
+
+	trimmed := strings.TrimSpace(output)
+	if trimmed != "(redacted)" {
+		t.Fatalf("expected redacted access token output, got %q", trimmed)
+	}
+	if strings.Contains(trimmed, accessToken) {
+		t.Fatalf("expected access token text output to be redacted, got %q", trimmed)
+	}
+
+	jsonOutput, err := captureStdout(t, func() error {
+		return (&Get{Name: []string{"access_token"}, FlagJSON: constant.FlagJSON{JSON: true}}).Run()
+	})
+	if err != nil {
+		t.Fatalf("Get.Run(access_token JSON) unexpected error: %v", err)
+	}
+
+	data := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(jsonOutput), &data); err != nil {
+		t.Fatalf("failed to decode JSON output %q: %v", jsonOutput, err)
+	}
+
+	if data["access_token"] != "(redacted)" {
+		t.Fatalf("expected JSON access_token to be redacted, got %#v", data["access_token"])
 	}
 }
 
@@ -240,7 +305,7 @@ func TestGet_RunJSON(t *testing.T) {
 	}
 
 	output, err := captureStdout(t, func() error {
-		return (&Get{Name: []string{"mode", "auto_install"}, JSON: true}).Run()
+		return (&Get{Name: []string{"mode", "auto_install"}, FlagJSON: constant.FlagJSON{JSON: true}}).Run()
 	})
 	if err != nil {
 		t.Fatalf("Get.Run() unexpected error: %v", err)
@@ -288,12 +353,12 @@ func TestList_RunPrintsAllSettings(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	if err := runSetCfg(t,
-		"mode=shim",
 		"root="+root,
-		"proxy=https://proxy.example.com:8080",
 		"active_version=20.0.0",
+		"cache_downloads=1",
 		"auto_use=1",
 		"auto_install=0",
+		"access_token=header.payload.signature",
 	); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
@@ -306,10 +371,8 @@ func TestList_RunPrintsAllSettings(t *testing.T) {
 	}
 
 	checks := []string{
-		"mode",
-		"shim",
-		"proxy",
-		"https://proxy.example.com:8080",
+		"cache_downloads",
+		"true",
 		"auto_use",
 		"true",
 		"auto_install",
@@ -321,7 +384,7 @@ func TestList_RunPrintsAllSettings(t *testing.T) {
 		}
 	}
 
-	hiddenChecks := []string{"root", root, "active_version", "20.0.0"}
+	hiddenChecks := []string{"root", root, "active_version", "20.0.0", "access_token", "header.payload.signature"}
 	for _, check := range hiddenChecks {
 		if strings.Contains(output, check) {
 			t.Fatalf("expected list output to hide %q, got %q", check, output)
@@ -331,8 +394,7 @@ func TestList_RunPrintsAllSettings(t *testing.T) {
 
 func TestList_RunPrintsJSONWhenEnabled(t *testing.T) {
 	if err := runSetCfg(t,
-		"mode=shim",
-		"proxy=https://proxy.example.com:8080",
+		"cache_downloads=1",
 		"auto_use=1",
 		"auto_install=0",
 	); err != nil {
@@ -340,7 +402,7 @@ func TestList_RunPrintsJSONWhenEnabled(t *testing.T) {
 	}
 
 	output, err := captureStdout(t, func() error {
-		return (&List{JSON: true}).Run(kong.Vars{"app": "nvm"})
+		return (&List{FlagJSON: constant.FlagJSON{JSON: true}}).Run(kong.Vars{"app": "nvm"})
 	})
 	if err != nil {
 		t.Fatalf("List.Run(JSON) unexpected error: %v", err)
@@ -351,13 +413,16 @@ func TestList_RunPrintsJSONWhenEnabled(t *testing.T) {
 		t.Fatalf("failed to decode JSON output %q: %v", output, err)
 	}
 
-	if data["mode"] != "shim" {
-		t.Fatalf("expected mode=shim, got %#v", data["mode"])
+	if data["cache_downloads"] != true {
+		t.Fatalf("expected cache_downloads=true, got %#v", data["cache_downloads"])
 	}
 	if data["auto_install"] != false {
 		t.Fatalf("expected auto_install=false, got %#v", data["auto_install"])
 	}
 	if _, ok := data["root"]; ok {
 		t.Fatalf("expected root to be hidden in JSON output, got %#v", data["root"])
+	}
+	if _, ok := data["access_token"]; ok {
+		t.Fatalf("expected access_token to be hidden in JSON output, got %#v", data["access_token"])
 	}
 }

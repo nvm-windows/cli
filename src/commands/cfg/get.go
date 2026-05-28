@@ -28,12 +28,12 @@ func (g *Get) Run() error {
 			data[name] = normalizeJSONValue(name, value)
 			continue
 		} else if len(g.Name) == 1 {
-			for _, line := range valueLines(value) {
+			for _, line := range valueLines(name, value) {
 				fmt.Println(line)
 			}
 			return nil
 		} else {
-			lines := valueLines(value)
+			lines := valueLines(name, value)
 			for i, line := range lines {
 				if i == 0 {
 					fmt.Printf("%s: %s\n", name, line)
@@ -55,7 +55,9 @@ func (g *Get) Run() error {
 	return nil
 }
 
-func valueLines(value interface{}) []string {
+func valueLines(name string, value interface{}) []string {
+	value = settings.MaskedValue(name, value)
+
 	if value == nil {
 		return []string{"(empty)"}
 	}
@@ -73,7 +75,7 @@ func valueLines(value interface{}) []string {
 func normalizeJSONValue(name string, value interface{}) interface{} {
 	field, ok := fieldByCfgForGet(name)
 	if !ok {
-		return value
+		return settings.MaskedValue(name, value)
 	}
 
 	if field.Type == reflect.TypeOf([]string{}) {
@@ -115,7 +117,7 @@ func normalizeJSONValue(name string, value interface{}) interface{} {
 		return []string{}
 	}
 
-	return value
+	return settings.MaskedValue(name, value)
 }
 
 func fieldByCfgForGet(name string) (reflect.StructField, bool) {

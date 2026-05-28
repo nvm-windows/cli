@@ -1,14 +1,17 @@
 package commands
 
 import (
-	"common/http"
 	"common/inspect"
+	"common/license"
 	"common/registry"
 	"common/settings"
+	"common/system"
+	"common/token"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net"
+	gohttp "net/http"
 	"nvm/commands/cache"
 	"nvm/constant"
 	"nvm/status"
@@ -27,6 +30,10 @@ import (
 var (
 	helpURL string = "https://docs.nvm-windows.com"
 )
+
+const remoteReachabilityTimeout = 1500 * time.Millisecond
+
+var reachabilityClient = &gohttp.Client{Timeout: remoteReachabilityTimeout}
 
 type Env struct {
 	constant.FlagJSON
@@ -82,8 +89,16 @@ type data struct {
 	Installation      installData `json:"installation"`
 	VersionManagement vmOps       `json:"operations"`
 	Computer          Computer    `json:"localhost"`
+	ActiveLicense     *License    `json:"license,omitempty"`
 	ReportStatus      string      `json:"report_status,omitempty"`
 	Help              string      `json:"help_url,omitempty"`
+}
+
+type License struct {
+	Plan    string   `json:"plan"`
+	Roles   []string `json:"roles"`
+	Issued  string   `json:"issued"`
+	Expires string   `json:"expires"`
 }
 
 var (
@@ -160,7 +175,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	ipv6interfaces := []string{}
 	shellEnv := getShellEnv()
 	developerModeEnabled := isDeveloperModeEnabled()
-	isAdministrator := isUserAdmin()
+	isAdministrator, _ := system.IsAdministrator()
 
 	currentUser, _ := user.Current()
 	userDomain := ""
@@ -205,19 +220,33 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		}
 	}
 
-	node_ping_results := make(map[string]bool)
-	for _, mirror := range cfg.NodeMirror {
-		node_ping_results[mirror] = isNodeMirrorReachable(mirror)
-	}
-
-	npm_ping_results := make(map[string]bool)
-	for _, mirror := range cfg.NpmMirror {
-		npm_ping_results[mirror] = isNpmMirrorReachable(mirror)
-	}
+	node_ping_results := runReachabilityChecks(cfg.NodeMirror, isNodeMirrorReachable)
+	npm_ping_results := runReachabilityChecks(cfg.NpmMirror, isNpmMirrorReachable)
 
 	status := "on"
 	if !cfg.Enabled {
 		status = "off"
+	}
+
+	var activeLicense *License
+	if license.AccessToken != nil && license.AccessToken.Claims != nil {
+		if claims, ok := license.AccessToken.Claims.(*token.TokenClaims); ok {
+			issued := "unknown"
+			expires := "unknown"
+			if claims.IssuedAt != nil {
+				issued = formatUserLocalDateTime(claims.IssuedAt.Time)
+			}
+			if claims.ExpiresAt != nil {
+				expires = formatUserLocalDateTime(claims.ExpiresAt.Time)
+			}
+
+			activeLicense = &License{
+				Plan:    claims.Plan,
+				Roles:   claims.Roles,
+				Issued:  issued,
+				Expires: expires,
+			}
+		}
 	}
 
 	out := data{
@@ -265,8 +294,9 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			IPv6Enabled:    ipv6enabled,
 			IPv6Interfaces: ipv6interfaces,
 		},
-		Help:         helpURL,
-		ReportStatus: fmt.Sprintf("Completed in %s", time.Since(start)),
+		ActiveLicense: activeLicense,
+		Help:          helpURL,
+		ReportStatus:  fmt.Sprintf("Completed in %s", time.Since(start)),
 	}
 
 	// JSON output
@@ -329,13 +359,18 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	fmt.Fprintf(t, "%s%s Version\t: %s\n", indent(1), branch, out.Installation.Version)
 
 	// nvm install root
+	hasActiveLicense := out.ActiveLicense != nil
 
-	symbol_a := branch
-	if len(out.Installation.Variables) == 0 {
-		symbol_a = end
+	if hasActiveLicense {
+		free := " (free)"
+		if out.ActiveLicense.Plan != "community" {
+			free = ""
+		}
+
+		fmt.Fprintf(t, "%s%s License\t: %s%s\n", indent(1), branch, out.ActiveLicense.Plan, free)
+		fmt.Fprintf(t, "%s%s%s %s Issued\t: %s\n", indent(1), line, indent(1), branch, out.ActiveLicense.Issued)
+		fmt.Fprintf(t, "%s%s%s %s Expires\t: %s\n", indent(1), line, indent(1), end, out.ActiveLicense.Expires)
 	}
-
-	fmt.Fprintf(t, "%s%s Path\t: %s\n", indent(1), symbol_a, out.Installation.InstallDir)
 
 	// Environment Variables
 	if len(out.Installation.Variables) > 0 {
@@ -352,6 +387,8 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		}
 	}
 
+	fmt.Fprintf(t, "%s%s Path\t: %s\n", indent(1), end, out.Installation.InstallDir)
+
 	fmt.Fprint(t, br)
 
 	// Version Management Report
@@ -367,7 +404,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	fmt.Fprintf(t, "%s%s Download Sources\t\n", indent(1), branch)
 	for i, mirror := range out.VersionManagement.NodeMirror {
 		reachable := ""
-		if !isNodeMirrorReachable(mirror) {
+		if !out.VersionManagement.NodeMirrorPingResult[mirror] {
 			reachable = " (unreachable)"
 		}
 
@@ -381,21 +418,25 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	// npm Mirrors
 	for i, mirror := range out.VersionManagement.NpmMirror {
 		reachable := ""
-		if !isNpmMirrorReachable(mirror) {
+		if !out.VersionManagement.NpmMirrorPingResult[mirror] {
 			reachable = " (unreachable)"
 		}
 
 		if i == 0 {
 			fmt.Fprintf(t, "%s%s%s %s npm\t: %s%s\n", indent(1), line, indent(1), end, mirror, reachable)
 		} else {
-			fmt.Fprintf(t, "%s%s%s %s      \t  %s%s\n", indent(1), line, indent(1), mirror, reachable)
+			fmt.Fprintf(t, "%s%s%s %s      \t  %s%s\n", indent(1), line, indent(1), end, mirror, reachable)
 		}
 	}
 
 	fmt.Fprintf(t, "%s%s Installed Versions\t\n", indent(1), branch)
 
 	// Active Version
-	fmt.Fprintf(t, "%s%s%s %s Default\t: v%s\n", indent(1), line, indent(1), branch, out.VersionManagement.ActiveVersion)
+	activeVersion := "not set"
+	if out.VersionManagement.ActiveVersion != "" {
+		activeVersion = "v" + out.VersionManagement.ActiveVersion
+	}
+	fmt.Fprintf(t, "%s%s%s %s Default\t: %s\n", indent(1), line, indent(1), branch, activeVersion)
 
 	// Installation Count
 	fmt.Fprintf(t, "%s%s%s %s Total\t: %d (%s)\n", indent(1), line, indent(1), branch, out.VersionManagement.InstalledVersionCount, formatSize(installSizeBytes))
@@ -700,13 +741,6 @@ func isDeveloperModeEnabled() bool {
 	return devMode == uint64(1)
 }
 
-func isUserAdmin() bool {
-	handle, _ := user.Current()
-	username := strings.Split(handle.Username, "\\")
-	_, _, err := registry.Get("HKU/S-1-5-19/Volatile Environment/" + username[len(username)-1])
-	return err == nil
-}
-
 func startSpinner(label string) func() {
 	frames := []string{"|", "/", "-", "\\"}
 	done := make(chan struct{})
@@ -753,11 +787,33 @@ func getUserEnvVar(name string) string {
 	return os.Getenv(name)
 }
 
+func runReachabilityChecks(mirrors []string, checker func(string) bool) map[string]bool {
+	results := make(map[string]bool, len(mirrors))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, m := range mirrors {
+		mirror := m
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			reachable := checker(mirror)
+			mu.Lock()
+			results[mirror] = reachable
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	return results
+}
+
 func isNodeMirrorReachable(url string) bool {
-	res, err := http.HEAD(url + "/index.tab")
+	res, err := reachabilityClient.Head(url + "/index.tab")
 	if err != nil {
 		return false
 	}
+	defer res.Body.Close()
 
 	if res.StatusCode < 200 || res.StatusCode >= 400 {
 		return false
@@ -767,10 +823,106 @@ func isNodeMirrorReachable(url string) bool {
 }
 
 func isNpmMirrorReachable(url string) bool {
-	res, err := http.GET(url + "/-/ping")
+	res, err := reachabilityClient.Get(url + "/-/ping")
 	if err != nil {
 		return false
 	}
+	defer res.Body.Close()
 
 	return (res.StatusCode == 200)
+}
+
+func formatUserLocalDateTime(ts time.Time) string {
+	dateLayout := windowsDateToGoLayout("M/d/yyyy")
+	timeLayout := windowsTimeToGoLayout("h:mm tt")
+
+	if raw, exists, err := registry.Get("HKCU/Control Panel/International/sShortDate"); err == nil && exists {
+		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+			dateLayout = windowsDateToGoLayout(s)
+		}
+	}
+
+	if raw, exists, err := registry.Get("HKCU/Control Panel/International/sShortTime"); err == nil && exists {
+		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+			timeLayout = windowsTimeToGoLayout(s)
+		}
+	}
+
+	// JWT numeric dates are UTC epoch seconds. Convert using Windows active
+	// timezone bias so output reflects the user's configured local timezone.
+	local := time.Unix(ts.Unix(), 0).UTC().Add(-time.Duration(getWindowsActiveTimeBiasMinutes()) * time.Minute)
+	return local.Format(dateLayout + " " + timeLayout)
+}
+
+func getWindowsActiveTimeBiasMinutes() int {
+	if raw, exists, err := registry.Get("HKLM/SYSTEM/CurrentControlSet/Control/TimeZoneInformation/ActiveTimeBias"); err == nil && exists {
+		switch v := raw.(type) {
+		case uint64:
+			return int(v)
+		case uint32:
+			return int(v)
+		case int64:
+			return int(v)
+		case int32:
+			return int(v)
+		case string:
+			if parsed, parseErr := strconv.Atoi(strings.TrimSpace(v)); parseErr == nil {
+				return parsed
+			}
+		}
+	}
+
+	// Fallback to runtime local zone offset when registry isn't available.
+	_, offsetSeconds := time.Now().Zone()
+	return -(offsetSeconds / 60)
+}
+
+func windowsDateToGoLayout(format string) string {
+	layout := strings.TrimSpace(format)
+	replacements := [][2]string{
+		{"yyyy", "2006"},
+		{"yy", "06"},
+		{"MMMM", "January"},
+		{"MMM", "Jan"},
+		{"MM", "01"},
+		{"M", "1"},
+		{"dd", "02"},
+		{"d", "2"},
+	}
+
+	for _, r := range replacements {
+		layout = strings.ReplaceAll(layout, r[0], r[1])
+	}
+
+	if layout == "" {
+		return "1/2/2006"
+	}
+
+	return layout
+}
+
+func windowsTimeToGoLayout(format string) string {
+	layout := strings.TrimSpace(format)
+	replacements := [][2]string{
+		{"HH", "15"},
+		{"H", "15"},
+		{"hh", "03"},
+		{"h", "3"},
+		{"mm", "04"},
+		{"m", "4"},
+		{"ss", "05"},
+		{"s", "5"},
+		{"tt", "PM"},
+		{"t", "P"},
+	}
+
+	for _, r := range replacements {
+		layout = strings.ReplaceAll(layout, r[0], r[1])
+	}
+
+	if layout == "" {
+		return "3:04 PM"
+	}
+
+	return layout
 }

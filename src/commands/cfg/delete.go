@@ -25,12 +25,25 @@ func (d *Del) Run() error {
 		}
 	}
 
+	auditMessage := ""
+	if currentValue, err := settings.Get(d.Name); err == nil {
+		if msg, ok := settings.DeletionAuditMessage(d.Name, currentValue); ok {
+			auditMessage = msg
+		}
+	}
+
 	if err := settings.Del(d.Name); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return err
 	}
 
-	log.Logf("%s configuration option reset to default", d.Name)
+	if auditMessage != "" {
+		log.Log(auditMessage)
+	}
+
+	if !settings.HasChangeAudit(d.Name) {
+		log.Logf("%s configuration option reset to default", d.Name)
+	}
 
 	return utility.DisplaySetting(d.Name, "successfully reset %s to %s\n")
 }

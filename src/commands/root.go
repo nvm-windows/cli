@@ -5,6 +5,7 @@ import (
 	"nvm/commands/cache"
 	"nvm/commands/cfg"
 	"nvm/commands/install"
+	"nvm/commands/license"
 	"nvm/commands/list"
 	"nvm/commands/use"
 
@@ -32,6 +33,7 @@ type RootCommand struct {
 	Reshim       Reshim        `cmd:"reshim" hidden:"true"`
 	Upgrade      Upgrade       `cmd:"upgrade" help:"Upgrade ${app}." hidden:"true"`
 	Subscribe    Subscribe     `cmd:"subscribe" help:"Subscribe to ${app} updates." hidden:"true"`
+	License      license.Root  `cmd:"license" help:"Set/clear ${app} license." hidden:"true"`
 }
 
 type RootCommandWithVersion struct {

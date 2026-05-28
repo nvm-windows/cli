@@ -77,8 +77,20 @@ func (s *Set) Run() error {
 			continue
 		}
 
+		auditMessage := ""
+		if currentValue, err := settings.Get(key); err == nil {
+			if msg, ok := settings.ChangeAuditMessage(key, currentValue, value); ok {
+				auditMessage = msg
+			}
+		}
+
 		if err := settings.Put(key, value); err != nil {
 			errs = append(errs, err.Error())
+			continue
+		}
+
+		if auditMessage != "" {
+			log.Log(auditMessage)
 		}
 	}
 
@@ -87,8 +99,8 @@ func (s *Set) Run() error {
 	}
 
 	for key := range input {
-		if key != "mode" { // mode event logging handled independently
-			log.Logf("%s set to %s", key, input[key])
+		if key != "mode" && !settings.HasChangeAudit(key) { // audited settings log at the write path
+			log.Logf("%s set to %s", key, displayValue(key, input[key]))
 		}
 
 		if err := utility.DisplaySetting(key, "%s set to:\n%s\n"); err != nil {
@@ -98,13 +110,30 @@ func (s *Set) Run() error {
 
 	var notifyLines []string
 	for key, value := range input {
-		notifyLines = append(notifyLines, fmt.Sprintf("%s set to %s", key, value))
+		notifyLines = append(notifyLines, fmt.Sprintf("%s set to %s", key, displayValue(key, value)))
 	}
 	if len(notifyLines) > 0 && !system.IsAppInForeground() {
 		go notify.Send(settings.AppId, "", strings.Join(notifyLines, ", "))
 	}
 
 	return nil
+}
+
+func displayValue(name string, value interface{}) string {
+	masked := settings.MaskedValue(name, value)
+	if masked == nil {
+		return "(empty)"
+	}
+
+	switch v := masked.(type) {
+	case []string:
+		if len(v) == 0 {
+			return "(empty)"
+		}
+		return strings.Join(v, ",")
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 func setAnnouncements(enabled bool) error {

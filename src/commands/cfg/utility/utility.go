@@ -15,8 +15,15 @@ func DisplaySetting(name, format string) error {
 		fmt.Fprintf(os.Stderr, "warning: failed to retrieve default value for %s: %v\n", name, err)
 		return err
 	}
+	value = settings.MaskedValue(name, value)
 
 	var result string
+	if value == nil {
+		result = "(empty)"
+		fmt.Fprintf(os.Stdout, format, name, result)
+		return nil
+	}
+
 	switch v := value.(type) {
 	case string:
 		result = v

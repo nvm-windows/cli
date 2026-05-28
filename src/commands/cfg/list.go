@@ -41,7 +41,7 @@ func (l *List) Run(vars kong.Vars) error {
 		if slices.Contains(hidden, key) {
 			continue
 		}
-		output[key] = typedValue(key, data[key])
+		output[key] = settings.MaskedValue(key, typedValue(key, data[key]))
 	}
 
 	if l.JSON {
