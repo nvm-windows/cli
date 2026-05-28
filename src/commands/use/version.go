@@ -25,6 +25,20 @@ type Version struct {
 	Local bool `flag:"local" short:"l" help:"Use the latest installed version matching the specified partial version."`
 }
 
+func getStringSetting(name string) (string, error) {
+	value, err := settings.Get(name)
+	if err != nil {
+		return "", err
+	}
+
+	text, ok := value.(string)
+	if !ok {
+		return "", nil
+	}
+
+	return text, nil
+}
+
 func (s *Version) Run() error {
 	requestedVersion := s.Version[0]
 	cfg := settings.Global()
@@ -125,8 +139,8 @@ func (s *Version) Run() error {
 	}
 
 	var lastVersion string
-	if v, err := settings.Get("active_version"); err == nil {
-		lastVersion = v.(string)
+	if v, err := getStringSetting("active_version"); err == nil {
+		lastVersion = v
 	}
 
 	if lastVersion == version {
@@ -141,12 +155,12 @@ func (s *Version) Run() error {
 	exe, _ := os.Executable()
 	symlink := filepath.Join(filepath.Dir(exe), ".nodejs")
 
-	mode, err := settings.Get("mode")
+	mode, err := getStringSetting("mode")
 	if err != nil {
 		log.Error(err)
 		return err
 	} else if mode == "link" {
-		source, err := settings.Get("root")
+		source, err := getStringSetting("root")
 		if err != nil {
 			log.Error(err)
 			return fmt.Errorf("failed to get install root: %w", err)
@@ -170,7 +184,7 @@ func (s *Version) Run() error {
 			}
 		}
 
-		if err := link.Link(filepath.Join(source.(string), "v"+version), filepath.Join(base, ".link/nodejs")); err != nil {
+		if err := link.Link(filepath.Join(source, "v"+version), filepath.Join(base, ".link/nodejs")); err != nil {
 			// Don't log to event log here because the link method does this
 			// automatically (with more specific detail)
 			return err
