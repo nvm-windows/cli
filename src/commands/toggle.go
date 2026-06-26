@@ -3,6 +3,7 @@ package commands
 import (
 	"common/settings"
 	"fmt"
+	"nvm/bootstrap"
 	"nvm/link"
 	"nvm/log"
 	"nvm/reshim"
@@ -15,8 +16,11 @@ import (
 type Toggle struct{}
 
 func (t *Toggle) Run(ctx *kong.Context) error {
-	exe, _ := os.Executable()
-	base := filepath.Dir(exe)
+	base, err := bootstrap.DataRoot()
+	if err != nil {
+		log.Error(err)
+		return fmt.Errorf("failed to resolve runtime root: %w", err)
+	}
 	target := filepath.Join(base, ".nodejs")
 
 	switch ctx.Selected().Name {

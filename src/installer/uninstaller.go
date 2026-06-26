@@ -376,6 +376,7 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 		resolvedVersion, _, err := resolver.Find(version)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", version, err)
+			log.LogSystemChanged("uninstall", version, "", log.OutcomeFailed, err.Error())
 			failures.Add(1)
 			return
 		}
@@ -401,12 +402,20 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 
 	dirExists := len(installDirs) > 0
 	for _, installDir := range installDirs {
+		npmVersion, _ := installedNpmVersion(installDir)
 		if err := os.RemoveAll(installDir); err != nil {
 			log.Errorf("Failed to uninstall Node.js v%s: %v", node_version, err)
 			fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", node_version, err)
+			log.LogSystemChanged("uninstall", node_version, installDir, log.OutcomeFailed, err.Error())
 			failures.Add(1)
 			return
 		}
+
+		extras := log.StructuredPayload{}
+		if npmVersion != "" {
+			extras["NpmVersion"] = npmVersion
+		}
+		log.LogSystemChanged("uninstall", node_version, installDir, log.OutcomeSucceeded, "", extras)
 	}
 
 	// If any matching version folder with node.exe still exists, uninstall did not complete.
@@ -418,21 +427,16 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 		err := fmt.Errorf("matching version directory still contains node.exe after uninstall")
 		log.Errorf("Failed to uninstall Node.js v%s: %v", node_version, err)
 		fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", node_version, err)
+		log.LogSystemChanged("uninstall", node_version, "", log.OutcomeFailed, err.Error())
 		failures.Add(1)
 		return
 	}
 
-	keyExists := false
-	if k, err := registry.OpenKey(registry.CURRENT_USER, registryKeyName(node_version), registry.QUERY_VALUE); err == nil {
-		k.Close()
-		keyExists = true
-	}
-	if keyExists {
-		unregisterNodeVersion(node_version)
-	}
+	removedRegistryEntry := unregisterNodeVersionForInstallDirs(node_version, installDirs)
 
-	if !dirExists && !keyExists {
+	if !dirExists && !removedRegistryEntry {
 		record(fmt.Sprintf("SKIPPED v%s (not installed)\n", node_version))
+		log.LogSystemChanged("uninstall", node_version, "", log.OutcomeSkipped, "not installed")
 		return
 	}
 
@@ -450,6 +454,9 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 
 	record(fmt.Sprintf("Uninstalled Node.js v%s\n", node_version))
 	log.Logf("Uninstalled Node.js v%s", node_version)
+	if len(installDirs) == 0 && removedRegistryEntry {
+		log.LogSystemChanged("uninstall", node_version, "", log.OutcomeSucceeded, "removed registry entry only")
+	}
 }
 
 func latestInstalledPartialMatch(spec string, installed []string) (string, bool) {
@@ -511,7 +518,83 @@ func uninstallDebugEnabled() bool {
 }
 
 func unregisterNodeVersion(version string) {
-	registry.DeleteKey(registry.CURRENT_USER, registryKeyName(version))
+	_ = unregisterNodeVersionForInstallDirs(version, nil)
+}
+
+func unregisterNodeVersionForInstallDirs(version string, installDirs []string) bool {
+	const uninstallRootPath = `Software\Microsoft\Windows\CurrentVersion\Uninstall`
+	const keyPrefix = "nvm4w-node-v"
+
+	targetVersion := normalizeVersionSpec(version)
+	if targetVersion == "" {
+		return false
+	}
+
+	removed := false
+
+	normalizedInstallDirs := make(map[string]struct{}, len(installDirs))
+	for _, installDir := range installDirs {
+		normalized := normalizeInstallPath(installDir)
+		if normalized != "" {
+			normalizedInstallDirs[normalized] = struct{}{}
+		}
+	}
+
+	uninstallRoot, err := registry.OpenKey(registry.CURRENT_USER, uninstallRootPath, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return false
+	}
+	defer uninstallRoot.Close()
+
+	subKeys, err := uninstallRoot.ReadSubKeyNames(-1)
+	if err != nil {
+		return false
+	}
+
+	for _, subKeyName := range subKeys {
+		if !strings.HasPrefix(strings.ToLower(subKeyName), keyPrefix) {
+			continue
+		}
+
+		fullPath := uninstallRootPath + `\` + subKeyName
+		entryKey, err := registry.OpenKey(registry.CURRENT_USER, fullPath, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+
+		displayVersion, _, _ := entryKey.GetStringValue("DisplayVersion")
+		installLocation, _, _ := entryKey.GetStringValue("InstallLocation")
+		managedBy, _, _ := entryKey.GetStringValue("ManagedBy")
+		entryKey.Close()
+
+		nameVersion := normalizeVersionSpec(strings.TrimPrefix(subKeyName, "nvm4w-node-v"))
+		displayVersionNorm := normalizeVersionSpec(displayVersion)
+		installLocationNorm := normalizeInstallPath(installLocation)
+
+		matchVersion := nameVersion == targetVersion || displayVersionNorm == targetVersion
+		_, matchInstallPath := normalizedInstallDirs[installLocationNorm]
+		isManaged := strings.EqualFold(strings.TrimSpace(managedBy), "nvm-windows") || strings.HasPrefix(strings.ToLower(subKeyName), keyPrefix)
+
+		if !isManaged || (!matchVersion && !matchInstallPath) {
+			continue
+		}
+
+		if err := registry.DeleteKey(registry.CURRENT_USER, fullPath); err == nil {
+			removed = true
+		}
+	}
+
+	return removed
+}
+
+func normalizeInstallPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	return strings.ToLower(cleaned)
 }
 
 func updateSystemVersions() {

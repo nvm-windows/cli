@@ -1,18 +1,17 @@
 package reshim
 
 import (
-	"common/settings"
 	"fmt"
+	"nvm/bootstrap"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 )
 
 func Run() error {
-	installRoot := expand(settings.Global().Root)
-	appRoot := filepath.Clean(filepath.Join(installRoot, ".."))
-	reshimPath := filepath.Clean(filepath.Join(appRoot, "utils", "reshim.exe"))
+	reshimPath, err := bootstrap.UtilityPath("reshim.exe")
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(reshimPath); err != nil {
 		return fmt.Errorf("reshim not found at %s: %w", reshimPath, err)
@@ -26,15 +25,4 @@ func Run() error {
 	// Detach: do not call cmd.Wait(). Reshim runs in the background.
 
 	return nil
-}
-
-func expand(path string) string {
-	re := regexp.MustCompile(`%([^%]+)%`)
-	return re.ReplaceAllStringFunc(path, func(match string) string {
-		varName := match[1 : len(match)-1]
-		if value, ok := os.LookupEnv(varName); ok {
-			return value
-		}
-		return match
-	})
 }

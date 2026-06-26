@@ -16,7 +16,12 @@ import (
 const installerTestRegistryRoot = "HKCU/Software/NVMTest/installer_test"
 
 func TestMain(m *testing.M) {
+	if exitCode, handled := maybeRunReshimTestHelper(); handled {
+		os.Exit(exitCode)
+	}
+
 	prefs.ROOT = installerTestRegistryRoot
+	prefs.ROOTS = []string{prefs.ROOT}
 	code := m.Run()
 	exec.Command("reg", "delete", `HKCU\Software\NVMTest`, "/f").Run() //nolint:errcheck
 	os.Exit(code)
@@ -52,7 +57,7 @@ func TestPrepareActiveForUninstallChoosesLatestSemverFallback(t *testing.T) {
 	createInstalledVersion(t, root, "10.0.0")
 	createInstalledVersion(t, root, "22.1.0")
 
-	if err := prepareActiveForUninstall(map[string]struct{}{"22.1.0": {}}); err != nil {
+	if err := prepareActiveForUninstall(map[string]struct{}{"22.1.0": {}}, func(string) {}); err != nil {
 		t.Fatalf("prepareActiveForUninstall() error = %v", err)
 	}
 

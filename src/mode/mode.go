@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"common/settings"
+	"nvm/bootstrap"
 	"nvm/link"
 	"nvm/log"
 	"nvm/reshim"
@@ -15,31 +16,39 @@ import (
 
 func Set(mode string) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	exe, _ := os.Executable()
-	root := filepath.Dir(exe)
 	cfg := settings.Global()
+	current := cfg.Mode
+
+	root, err := bootstrap.DataRoot()
+	if err != nil {
+		err = fmt.Errorf("failed to resolve runtime root: %w", err)
+		logConfigurationOutcome("mode", mode, current, log.OutcomeFailed, err.Error())
+		return err
+	}
 
 	var value string
-
-	current := cfg.Mode
 
 	switch mode {
 	case "link", "symlink":
 		if current == "link" {
-			return fmt.Errorf("already operating in link mode")
+			err := fmt.Errorf("already operating in link mode")
+			logConfigurationOutcome("mode", "link", current, log.OutcomeSkipped, err.Error())
+			return err
 		}
 
 		// Link Mode
 		value = "link"
 		ensure(root, ".link")
 		if err := updateLinkTarget(root); err != nil {
-			log.Error(err)
+			logConfigurationOutcome("mode", "link", current, log.OutcomeFailed, err.Error())
 			return err
 		}
 
 	case "shim":
 		if current == "shim" {
-			return fmt.Errorf("already operating in shim mode")
+			err := fmt.Errorf("already operating in shim mode")
+			logConfigurationOutcome("mode", "shim", current, log.OutcomeSkipped, err.Error())
+			return err
 		}
 
 		// Shim mode
@@ -49,13 +58,15 @@ func Set(mode string) error {
 		reshim.Run()
 
 	default:
-		return fmt.Errorf("invalid mode: %s", mode)
+		err := fmt.Errorf("invalid mode: %s", mode)
+		logConfigurationOutcome("mode", mode, current, log.OutcomeFailed, err.Error())
+		return err
 	}
 
 	// Write the desired mode to the registry.
 	if err := settings.Put("mode", value); err != nil {
 		err = fmt.Errorf("failed to set mode: %w", err)
-		log.Error(err)
+		logConfigurationOutcome("mode", value, current, log.OutcomeFailed, err.Error())
 		return err
 	}
 
@@ -63,7 +74,7 @@ func Set(mode string) error {
 	actual, err := settings.Get("mode")
 	if err != nil {
 		err = fmt.Errorf("failed to verify mode: %w", err)
-		log.Error(err)
+		logConfigurationOutcome("mode", value, current, log.OutcomeFailed, err.Error())
 		return err
 	}
 
@@ -71,8 +82,8 @@ func Set(mode string) error {
 	// The registry code will return the current effective value if a policy
 	// prevents the change. If they don't match, it was blocked.
 	if actualStr, ok := actual.(string); ok && !strings.EqualFold(actualStr, value) {
-		err = fmt.Errorf("policy prevents setting mode")
-		log.Warn(err.Error())
+		err := fmt.Errorf("policy prevents setting mode")
+		logConfigurationOutcome("mode", value, current, log.OutcomeFailed, err.Error())
 		return err
 	}
 
@@ -85,13 +96,19 @@ func Set(mode string) error {
 	}
 
 	if err := link.NewJunction(filepath.Join(root, "."+value, nodepath), filepath.Join(root, ".nodejs")); err != nil {
-		log.Error(err)
-		return fmt.Errorf("failed to update internal junction: %w", err)
+		err = fmt.Errorf("failed to update internal junction: %w", err)
+		logConfigurationOutcome("mode", value, current, log.OutcomeFailed, err.Error())
+		return err
 	}
 
+	logConfigurationOutcome("mode", value, current, log.OutcomeSucceeded, "")
 	log.Logf("switched from %s to %s operating mode", current, value)
 
 	return nil
+}
+
+func logConfigurationOutcome(key, value, oldValue, outcome, detail string) {
+	log.LogConfigurationChanged(key, strings.TrimSpace(value), strings.TrimSpace(oldValue), outcome, detail)
 }
 
 func ensure(root, name string) string {

@@ -26,7 +26,9 @@ func (d *Del) Run() error {
 	}
 
 	auditMessage := ""
+	oldValue := ""
 	if currentValue, err := settings.Get(d.Name); err == nil {
+		oldValue = displayValue(d.Name, currentValue)
 		if msg, ok := settings.DeletionAuditMessage(d.Name, currentValue); ok {
 			auditMessage = msg
 		}
@@ -40,6 +42,17 @@ func (d *Del) Run() error {
 	if auditMessage != "" {
 		log.Log(auditMessage)
 	}
+
+	payload := log.StructuredPayload{
+		"Action":        "Modified",
+		"Configuration": d.Name,
+		"Value":         "(default)",
+		"User":          log.Actor(),
+	}
+	if oldValue != "" {
+		payload["Old"] = oldValue
+	}
+	log.LogStructured("nvm.configuration.changed", payload)
 
 	if !settings.HasChangeAudit(d.Name) {
 		log.Logf("%s configuration option reset to default", d.Name)

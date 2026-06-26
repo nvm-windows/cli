@@ -8,6 +8,7 @@ import (
 	"common/system"
 	"common/version_support"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -155,11 +156,13 @@ func install(
 	nodeVersion, _, err := resolver.Find(version)
 	if err != nil {
 		status.Alert(fmt.Errorf("FAILED v%s: %v", version, err), false)
+		log.LogSystemChanged("install", version, "", log.OutcomeFailed, err.Error())
 		return
 	}
 
 	if allowed, err := acl.IsAllowedVersion(nodeVersion); !allowed {
 		status.Alert(fmt.Errorf("%v", err), false)
+		log.LogSystemChanged("install", nodeVersion, "", log.OutcomeFailed, err.Error())
 		return
 	}
 
@@ -182,12 +185,14 @@ func install(
 	if !cfg.Force && !cfg.CacheOnly {
 		if info, err := os.Stat(txn.installDir); err == nil && info.IsDir() {
 			status.Alert(fmt.Errorf("SKIPPED: v%s is already installed", nodeVersion), false)
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSkipped, "already installed")
 			return
 		}
 	}
 
 	if supported, err := version_support.IsSupportedVersion(nodeVersion); !supported {
 		status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, err), false)
+		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
 		return
 	}
 
@@ -196,6 +201,7 @@ func install(
 		backupPath := fmt.Sprintf("%s.nvm-rollback-%d", txn.installDir, time.Now().UnixNano())
 		if err := os.Rename(txn.installDir, backupPath); err != nil {
 			status.Alert(fmt.Errorf("FAILED v%s: could not prepare rollback backup: %w", nodeVersion, err))
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
 			return
 		}
 		txn.installBackup = backupPath
@@ -207,6 +213,7 @@ func install(
 				_ = restoreInstallBackup(txn)
 			}
 			status.Alert(fmt.Errorf("FAILED: v%s could not prepare install root %s: %w", nodeVersion, txn.installDir, err))
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
 			return
 		}
 		if !txn.installed {
@@ -236,6 +243,7 @@ func install(
 	if errors.Is(processErr, context.Canceled) || (processErr == nil && ctx.Err() != nil) {
 		rollbackCanceledInstall(txn, status)
 		processErr = context.Canceled
+		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeCancelled, "installation cancelled")
 		return
 	}
 
@@ -251,6 +259,7 @@ func install(
 			}
 		}
 		status.Alert(fmt.Errorf("FAILED v%s: %v", nodeVersion, processErr))
+		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, processErr.Error())
 		return
 	}
 
@@ -276,11 +285,19 @@ func install(
 			}
 		}
 		status.Alert(fmt.Errorf("FAILED v%s: %v", nodeVersion, processErr))
+		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, processErr.Error())
 		return
 	}
 
 	status.TotalInstalled++
 	status.Versions[index-1] = nodeVersion
+	log.Logf("Node.js v%s installed at %s", nodeVersion, txn.installDir)
+
+	extras := log.StructuredPayload{}
+	if npmVersion, ok := installedNpmVersion(txn.installDir); ok {
+		extras["NpmVersion"] = npmVersion
+	}
+	log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSucceeded, "", extras)
 }
 
 func downloadNode(ctx context.Context, version, target string, cfg InstallConfig, status *Status, txn *Transaction) (retErr error) {
@@ -566,4 +583,28 @@ func registerNodeVersion(version, installDir, publisher string) {
 	key.SetStringValue("InstallLocation", installDir)
 	key.SetDWordValue("NoModify", 1)
 	key.SetDWordValue("NoRepair", 1)
+}
+
+func installedNpmVersion(installDir string) (string, bool) {
+	type npmPackage struct {
+		Version string `json:"version"`
+	}
+
+	path := filepath.Join(installDir, "node_modules", "npm", "package.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+
+	var pkg npmPackage
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		return "", false
+	}
+
+	version := strings.TrimSpace(pkg.Version)
+	if version == "" {
+		return "", false
+	}
+
+	return version, true
 }

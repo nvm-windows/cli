@@ -41,7 +41,6 @@ func (s *Set) Run() error {
 	errs := []string{}
 	for key, value := range input {
 		if key == "mode" {
-			// mode changes are handled independently to ensure proper event logging
 			if err := mode.Set(value); err != nil {
 				errs = append(errs, err.Error())
 			} else {
@@ -53,10 +52,16 @@ func (s *Set) Run() error {
 		}
 
 		if key == "disable_announcements" {
+			oldValue := currentDisplayValue(key)
+			newValue := displayValue(key, value)
+
 			if err := settings.Put(key, value); err != nil {
+				log.LogConfigurationChanged(key, newValue, oldValue, log.OutcomeFailed, err.Error())
 				errs = append(errs, err.Error())
 				continue
 			}
+
+			log.LogConfigurationChanged(key, newValue, oldValue, log.OutcomeSucceeded, "")
 
 			enabled := !strings.EqualFold(value, "true")
 			if err := setAnnouncements(enabled); err != nil {
@@ -68,6 +73,11 @@ func (s *Set) Run() error {
 
 		skip, deferredFn, err := config.Prepare(&key, &value)
 		if err != nil {
+			outcome := log.OutcomeFailed
+			if skip {
+				outcome = log.OutcomeSkipped
+			}
+			log.LogConfigurationChanged(key, displayValue(key, value), currentDisplayValue(key), outcome, err.Error())
 			errs = append(errs, err.Error())
 		}
 		if deferredFn != nil {
@@ -77,21 +87,16 @@ func (s *Set) Run() error {
 			continue
 		}
 
-		auditMessage := ""
-		if currentValue, err := settings.Get(key); err == nil {
-			if msg, ok := settings.ChangeAuditMessage(key, currentValue, value); ok {
-				auditMessage = msg
-			}
-		}
+		oldValue := currentDisplayValue(key)
+		newValue := displayValue(key, value)
 
 		if err := settings.Put(key, value); err != nil {
+			log.LogConfigurationChanged(key, newValue, oldValue, log.OutcomeFailed, err.Error())
 			errs = append(errs, err.Error())
 			continue
 		}
 
-		if auditMessage != "" {
-			log.Log(auditMessage)
-		}
+		log.LogConfigurationChanged(key, newValue, oldValue, log.OutcomeSucceeded, "")
 	}
 
 	if len(errs) > 0 {
@@ -99,7 +104,7 @@ func (s *Set) Run() error {
 	}
 
 	for key := range input {
-		if key != "mode" && !settings.HasChangeAudit(key) { // audited settings log at the write path
+		if key != "mode" {
 			log.Logf("%s set to %s", key, displayValue(key, input[key]))
 		}
 
@@ -117,6 +122,15 @@ func (s *Set) Run() error {
 	}
 
 	return nil
+}
+
+func currentDisplayValue(key string) string {
+	currentValue, err := settings.Get(key)
+	if err != nil {
+		return ""
+	}
+
+	return displayValue(key, currentValue)
 }
 
 func displayValue(name string, value interface{}) string {

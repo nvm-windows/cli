@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"nvm/bootstrap"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,8 +20,11 @@ type cacheDir struct {
 func load() cacheDir {
 	var c cacheDir
 
-	exe, _ := os.Executable()
-	root := filepath.Join(filepath.Dir(exe), ".cache")
+	root, err := bootstrap.CacheRoot()
+	if err != nil {
+		exe, _ := os.Executable()
+		root = filepath.Join(filepath.Dir(exe), ".cache")
+	}
 	c.Metadata = filepath.Join(root, "metadata")
 	c.Versions = filepath.Join(root, "versions")
 

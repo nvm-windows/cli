@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net"
 	gohttp "net/http"
+	"nvm/bootstrap"
 	"nvm/commands/cache"
 	"nvm/constant"
 	"nvm/status"
@@ -118,7 +119,10 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 
 	start := time.Now()
 	cfg := settings.Global()
-	exe, _ := os.Executable()
+	programRoot, err := bootstrap.ProgramRoot()
+	if err != nil {
+		return fmt.Errorf("failed to resolve program root: %w", err)
+	}
 	installRoot := settings.Expand(cfg.Root)
 	cachedRuntimeCount, cachedRuntimeSizeBytes := cacheStats(cache.Store.Versions)
 	_, installSizeBytes := cacheStats(installRoot)
@@ -223,9 +227,9 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	node_ping_results := runReachabilityChecks(cfg.NodeMirror, isNodeMirrorReachable)
 	npm_ping_results := runReachabilityChecks(cfg.NpmMirror, isNpmMirrorReachable)
 
-	status := "on"
+	current_status := "on"
 	if !cfg.Enabled {
-		status = "off"
+		current_status = "off"
 	}
 
 	var activeLicense *License
@@ -252,7 +256,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	out := data{
 		Installation: installData{
 			Version:    vars["version"],
-			InstallDir: path(filepath.Dir(exe)),
+			InstallDir: path(programRoot),
 			Upgrade:    map[bool]string{true: "blocked", false: "allowed"}[cfg.DisableUpgrade],
 			// Variables: map[string]string{
 			// 	"NVM_HOME":      getUserEnvVar("NVM_HOME"),
@@ -260,7 +264,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			// },
 		},
 		VersionManagement: vmOps{
-			Status:                status,
+			Status:                current_status,
 			Mode:                  cfg.Mode,
 			ActiveVersion:         cfg.ActiveVersion,
 			NodeMirror:            cfg.NodeMirror,

@@ -48,7 +48,12 @@ func (c *Default) Run(ctx *kong.Context, vars kong.Vars) error {
 
 	t := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintf(t, "Default\t: v%s\n", active)
+	current := "none"
+	if active != "" {
+		current = "v" + active
+	}
+
+	fmt.Fprintf(t, "Default\t: %s\n", current)
 
 	if cfg.LastVersion != "" {
 		fmt.Fprintf(t, "Last\t: v%s\n", cfg.LastVersion)

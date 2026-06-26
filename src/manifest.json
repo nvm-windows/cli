@@ -7,6 +7,7 @@
   "appUserModelId": "AuthorSoftware.NVMWindows",
   "appUrl": "https://nvm-windows.com",
   "appOrgLabel": "Author Software",
+  "eventLabel": "NVMWindows.Events.man",
   "license": "MIT",
   "author": "Author Software Inc.",
   "build": "./cmd",
@@ -34,6 +35,9 @@
     "common/http.version": "manifest.version",
     "common/http.edition": "community",
     "common/http.httpCacheRoot": "metadata",
+    "common/eventlog.providerName": "manifest.appLabel",
+    "common/eventlog.providerDisplayName": "manifest.appLabel",
+    "common/eventlog.providerManifestFileName": "manifest.eventLabel",
     "main.eventSourceName": "manifest.appLabel",
     "nvm/commands/license.org": "manifest.appOrgLabel",
     "nvm/log.sourceName": "manifest.appLabel",
@@ -50,19 +54,6 @@
     "github.com/nvm-windows/sync": "1.0.0"
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

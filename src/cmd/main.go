@@ -7,6 +7,7 @@ import (
 	"common/settings"
 	"common/system"
 	"fmt"
+	"nvm/bootstrap"
 	"nvm/commands"
 	"nvm/installer"
 	"nvm/legacy"
@@ -32,8 +33,8 @@ func main() {
 
 	switch os.Args[1] {
 	case "--register-eventlog":
-		// Invoked by optional admin tooling, not by the per-user MSI. Runs
-		// elevated so it can write to HKLM.
+		// Invoked by OSS installer to support event log registration without needing to run the entire CLI installer.
+		// Runs elevated so it can write to HKLM.
 		//
 		// Also cleans up NVM v1 SYSTEM env vars (NVM_HOME, NVM_SYMLINK) and any
 		// references to them in the SYSTEM PATH — this requires the same elevation.
@@ -59,8 +60,16 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--cleanup-user-appdata":
+		// Invoked by the MSI during a real uninstall to remove the current user's
+		// AppData runtime root before Program Files payload removal.
+		if err := installer.CleanupCurrentUserAppData(); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--unregister-eventlog":
-		// Invoked by optional admin tooling, not by the per-user MSI.
+		// Invoked by OSS uninstaller to support event log unregistration without needing to run the entire CLI uninstaller.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
@@ -90,6 +99,10 @@ func main() {
 	}
 
 	settings.Load()
+	if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
 	currentAccessToken, _ := settings.Get("access_token")
 
 	edition := "community"

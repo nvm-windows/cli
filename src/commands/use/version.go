@@ -6,6 +6,7 @@ import (
 	"common/settings"
 	"common/system"
 	"fmt"
+	"nvm/bootstrap"
 	"nvm/constant"
 	"nvm/installer"
 	"nvm/link"
@@ -15,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 type Version struct {
@@ -152,8 +152,12 @@ func (s *Version) Run() error {
 		return err
 	}
 
-	exe, _ := os.Executable()
-	symlink := filepath.Join(filepath.Dir(exe), ".nodejs")
+	base, err := bootstrap.DataRoot()
+	if err != nil {
+		log.Error(err)
+		return fmt.Errorf("failed to resolve runtime root: %w", err)
+	}
+	symlink := filepath.Join(base, ".nodejs")
 
 	mode, err := getStringSetting("mode")
 	if err != nil {
@@ -166,17 +170,11 @@ func (s *Version) Run() error {
 			return fmt.Errorf("failed to get install root: %w", err)
 		}
 
-		base := filepath.Dir(exe)
 		if _, err := os.Lstat(filepath.Join(base, ".link")); err != nil {
 			if os.IsNotExist(err) {
-				if err := os.Mkdir(filepath.Join(base, ".link"), 0755); err != nil {
+				if err := bootstrap.EnsureHiddenDir(filepath.Join(base, ".link")); err != nil {
 					log.Error(err)
 					return fmt.Errorf("failed to create .link directory: %w", err)
-				} else {
-					// Hide the .link directory
-					if ptr, err := syscall.UTF16PtrFromString(filepath.Join(base, ".link")); err == nil {
-						syscall.SetFileAttributes(ptr, syscall.FILE_ATTRIBUTE_HIDDEN|syscall.FILE_ATTRIBUTE_DIRECTORY)
-					}
 				}
 			} else {
 				log.Error(err)
@@ -197,7 +195,7 @@ func (s *Version) Run() error {
 		rel_path = ".link/nodejs"
 	}
 
-	if err := link.Link(filepath.Join(filepath.Dir(exe), rel_path), symlink); err != nil {
+	if err := link.Link(filepath.Join(base, rel_path), symlink); err != nil {
 		log.Error(err)
 		return err
 	}

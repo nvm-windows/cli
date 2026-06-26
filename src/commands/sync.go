@@ -4,6 +4,7 @@ import (
 	"common/settings"
 	"fmt"
 	"nvm/constant"
+	"nvm/bootstrap"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,12 +92,11 @@ func (c *Reshim) Run() error {
 }
 
 func getSyncToolPath() (string, error) {
-	exe, err := os.Executable()
+	sync, err := bootstrap.UtilityPath("sync.exe")
 	if err != nil {
 		return "", err
 	}
 
-	sync := filepath.Join(filepath.Dir(exe), "utils", "sync.exe")
 	if _, err := os.Lstat(sync); os.IsNotExist(err) {
 		return "", fmt.Errorf("sync.exe not found")
 	}
