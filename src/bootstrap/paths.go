@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"common/fs"
 	"common/settings"
 	"fmt"
 	"io"
@@ -157,6 +158,7 @@ func EnsureHiddenDir(path string) error {
 		_ = syscall.SetFileAttributes(ptr, syscall.FILE_ATTRIBUTE_HIDDEN|syscall.FILE_ATTRIBUTE_DIRECTORY)
 	}
 
+	_ = fs.HardenManagedDirectory(path)
 	return nil
 }
 

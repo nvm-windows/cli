@@ -505,7 +505,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		return fmt.Errorf("unable to verify Node.js signer for v%s: %w", version, err)
 	}
 
-	fs.EnableInheritance(installDir)
+	_ = fs.HardenManagedDirectory(installDir)
 	registerNodeVersion(version, installDir, publisher)
 	if txn != nil && !txn.installed {
 		txn.installedNew = true

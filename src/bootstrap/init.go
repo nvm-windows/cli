@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"common/fs"
 	prefs "common/preferences"
 	"common/registry"
 	"fmt"
@@ -33,6 +34,16 @@ func EnsureUserProfileInitialized() error {
 	if err != nil {
 		return err
 	}
+
+	installRoot, err := InstallRoot()
+	if err != nil {
+		return err
+	}
+	dataRoot, err := DataRoot()
+	if err != nil {
+		return err
+	}
+	fs.HardenRuntimeLayout(installRoot, dataRoot)
 
 	if err := EnsureHiddenDir(shimDir); err != nil {
 		return fmt.Errorf("failed to create shim directory: %w", err)
