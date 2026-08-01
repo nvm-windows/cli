@@ -5,6 +5,7 @@ import (
 	"common/resolver"
 	"common/settings"
 	"common/system"
+	"common/verifycache"
 	"fmt"
 	"nvm/bootstrap"
 	"nvm/constant"
@@ -204,6 +205,10 @@ func (s *Version) Run() error {
 		if err := reshim.Run(); err != nil {
 			log.Error(err)
 			return err
+		}
+	} else if source, err := getStringSetting("root"); err == nil {
+		if err := verifycache.SignNodeCache(filepath.Join(source, "v"+version, "node.exe")); err != nil {
+			log.Logf("verify cache warning: %v", err)
 		}
 	}
 

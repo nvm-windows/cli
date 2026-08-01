@@ -9,7 +9,6 @@ import (
 	"nvm/constant"
 	"os"
 	"reflect"
-	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -20,8 +19,6 @@ import (
 type List struct {
 	constant.FlagJSON
 }
-
-var hidden = []string{"active_version", "root"}
 
 func (l *List) Run(vars kong.Vars) error {
 	data, err := settings.All(prefs.ROOT)
@@ -38,7 +35,7 @@ func (l *List) Run(vars kong.Vars) error {
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		if slices.Contains(hidden, key) {
+		if settings.IsHiddenCfg(key) {
 			continue
 		}
 		output[key] = settings.MaskedValue(key, typedValue(key, data[key]))

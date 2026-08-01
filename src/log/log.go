@@ -2,6 +2,8 @@ package log
 
 import (
 	"common/eventlog"
+	"common/license"
+	"encoding/json"
 	"os"
 	"os/user"
 	"strings"
@@ -32,6 +34,10 @@ func Logf(format string, args ...interface{}) {
 }
 
 func LogStructured(eventName string, payload any, code ...int) {
+	if !license.AllowsStructuredLogging() {
+		Log(formatStructuredFallback(eventName, payload), code...)
+		return
+	}
 	eventlog.LogStructured(eventName, payload, code...)
 }
 
@@ -44,6 +50,10 @@ func Warnf(format string, args ...interface{}) {
 }
 
 func WarnStructured(eventName string, payload any, code ...int) {
+	if !license.AllowsStructuredLogging() {
+		Warn(formatStructuredFallback(eventName, payload), code...)
+		return
+	}
 	eventlog.WarnStructured(eventName, payload, code...)
 }
 
@@ -56,7 +66,31 @@ func Errorf(format string, args ...interface{}) {
 }
 
 func ErrorStructured(eventName string, payload any, code ...int) {
+	if !license.AllowsStructuredLogging() {
+		Error(fmtError(formatStructuredFallback(eventName, payload)), code...)
+		return
+	}
 	eventlog.ErrorStructured(eventName, payload, code...)
+}
+
+type fallbackError string
+
+func (e fallbackError) Error() string { return string(e) }
+
+func fmtError(message string) error {
+	return fallbackError(message)
+}
+
+func formatStructuredFallback(eventName string, payload any) string {
+	eventName = strings.TrimSpace(eventName)
+	encoded, err := json.Marshal(payload)
+	if err != nil || len(encoded) == 0 || string(encoded) == "null" || string(encoded) == "{}" {
+		return eventName
+	}
+	if eventName == "" {
+		return string(encoded)
+	}
+	return eventName + " " + string(encoded)
 }
 
 // Actor returns a stable best-effort user identifier for audit events.

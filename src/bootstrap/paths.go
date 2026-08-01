@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 func ProgramRoot() (string, error) {
@@ -150,15 +149,32 @@ func DataSyncRoot() (string, error) {
 }
 
 func EnsureHiddenDir(path string) error {
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
-	}
+	return fs.EnsureHiddenDirectory(path)
+}
 
-	if ptr, err := syscall.UTF16PtrFromString(path); err == nil {
-		_ = syscall.SetFileAttributes(ptr, syscall.FILE_ATTRIBUTE_HIDDEN|syscall.FILE_ATTRIBUTE_DIRECTORY)
+func ensureRequiredRuntimeDirs(dataRoot string) error {
+	for _, name := range []string{".shim", ".link", ".sync", ".cache", ".verify"} {
+		if err := EnsureHiddenDir(filepath.Join(dataRoot, name)); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
 	}
+	for _, sub := range []string{"versions", "http"} {
+		if err := EnsureHiddenDir(filepath.Join(dataRoot, ".cache", sub)); err != nil {
+			return fmt.Errorf(".cache/%s: %w", sub, err)
+		}
+	}
+	return nil
+}
 
-	_ = fs.HardenManagedDirectory(path)
+func hideRuntimeDataDirs(dataRoot string) error {
+	for _, name := range fs.RuntimeDataDirNames() {
+		if name == ".shim" {
+			continue
+		}
+		if err := fs.HideDirectory(filepath.Join(dataRoot, name)); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
 	return nil
 }
 
@@ -232,11 +248,7 @@ func syncShimExecutable(sourcePath, targetPath string) error {
 		return fmt.Errorf("failed to stamp shim modtime: %w", err)
 	}
 
-	if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to replace target shim: %w", err)
-	}
-
-	if err := os.Rename(tempPath, targetPath); err != nil {
+	if err := fs.ReplaceExecutable(tempPath, targetPath); err != nil {
 		return fmt.Errorf("failed to install target shim: %w", err)
 	}
 
@@ -265,6 +277,19 @@ func syncSharedExecutable(sourcePath, targetPath string) error {
 		return fmt.Errorf("failed to create target executable directory: %w", err)
 	}
 
+	// Prefer in-place overwrite so existing module hardlinks keep pointing at proxy.exe.
+	if err := syncSharedExecutableInPlace(sourcePath, targetPath, sourceInfo); err == nil {
+		return nil
+	} else if !isBusyExecutableError(err) {
+		return err
+	}
+
+	// Running npm/npx/etc. hardlinks lock proxy.exe. Replace via temp, then reshim
+	// (MaintainShimDirectory) recreates hardlinks to the new file.
+	return syncSharedExecutableReplace(sourcePath, targetPath, sourceInfo)
+}
+
+func syncSharedExecutableInPlace(sourcePath, targetPath string, sourceInfo os.FileInfo) error {
 	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
 		return fmt.Errorf("failed to open source executable: %w", err)
@@ -296,6 +321,44 @@ func syncSharedExecutable(sourcePath, targetPath string) error {
 	return nil
 }
 
+func syncSharedExecutableReplace(sourcePath, targetPath string, sourceInfo os.FileInfo) error {
+	tempFile, err := os.CreateTemp(filepath.Dir(targetPath), "proxy-*.exe")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary proxy file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		tempFile.Close()
+		return fmt.Errorf("failed to open source executable: %w", err)
+	}
+
+	_, copyErr := io.Copy(tempFile, sourceFile)
+	closeSourceErr := sourceFile.Close()
+	closeTempErr := tempFile.Close()
+	if copyErr != nil {
+		return fmt.Errorf("failed to copy source executable: %w", copyErr)
+	}
+	if closeSourceErr != nil {
+		return fmt.Errorf("failed to close source executable: %w", closeSourceErr)
+	}
+	if closeTempErr != nil {
+		return fmt.Errorf("failed to flush temporary proxy file: %w", closeTempErr)
+	}
+
+	if err := os.Chtimes(tempPath, sourceInfo.ModTime(), sourceInfo.ModTime()); err != nil {
+		return fmt.Errorf("failed to stamp executable modtime: %w", err)
+	}
+
+	if err := fs.ReplaceExecutable(tempPath, targetPath); err != nil {
+		return fmt.Errorf("failed to install target executable: %w", err)
+	}
+
+	return nil
+}
+
 func syncSharedFile(sourcePath, targetPath string) error {
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
@@ -310,7 +373,9 @@ func syncSharedFile(sourcePath, targetPath string) error {
 		if targetInfo.IsDir() {
 			return fmt.Errorf("target file %s is a directory", targetPath)
 		}
-		return nil
+		if sourceInfo.Size() == targetInfo.Size() && !sourceInfo.ModTime().After(targetInfo.ModTime()) {
+			return nil
+		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to inspect target file %s: %w", targetPath, err)
 	}

@@ -6,6 +6,7 @@ import (
 	"common/resolver"
 	"common/settings"
 	"common/system"
+	"common/verifycache"
 	"common/version_support"
 	"context"
 	"encoding/json"
@@ -327,7 +328,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		cacheFile = txn.cacheFile
 	}
 	if cacheFile == "" && !cfg.NoCache && cfg.CacheDir != "" {
-		if err := os.MkdirAll(cfg.CacheDir, 0755); err == nil {
+		if err := ensureVersionCacheDirectory(cfg.CacheDir); err == nil {
 			cacheFile = filepath.Join(cfg.CacheDir, archiveName)
 		}
 	}
@@ -335,10 +336,15 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	fromCache := false
 	if cacheFile != "" {
 		if _, err := os.Stat(cacheFile); err == nil {
-			fromCache = true
-			archivePath = cacheFile
-			if txn != nil {
-				txn.cached = true
+			if err := verifyCachedNodeArchiveIntegrity(ctx, version, cacheFile, cfg); err != nil {
+				log.Logf("invalid cached Node.js v%s archive removed: %v", version, err)
+				invalidateCachedNodeArchive(cacheFile)
+			} else {
+				fromCache = true
+				archivePath = cacheFile
+				if txn != nil {
+					txn.cached = true
+				}
 			}
 		}
 	}
@@ -355,9 +361,11 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		downloaded := false
 		var downloadEnd time.Time
 		insecure := allowInsecureDownloads(cfg)
+		mirrors := settings.Global().NodeMirror
+		singleMirror := len(mirrors) == 1
 		status.Downloads++
 
-		for _, mirror := range settings.Global().NodeMirror {
+		for _, mirror := range mirrors {
 			shasumPath := filepath.Join(target, fmt.Sprintf("SHASUMS256-v%s-win-%s.txt", version, cpuarch))
 			_ = os.Remove(shasumPath)
 
@@ -382,6 +390,12 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 			case result, ok := <-shasumJob.Result:
 				if !ok || result.Error != nil || result.Response == nil || !result.Response.Success {
 					_ = os.Remove(shasumPath)
+					if ok && result.Error == nil {
+						if authErr := mirrorAuthError(result, singleMirror); authErr != nil {
+							status.Downloads--
+							return authErr
+						}
+					}
 					continue
 				}
 			}
@@ -418,6 +432,12 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 						break downloadLoop
 					}
 					if result.Error != nil || result.Response == nil || !result.Response.Success {
+						if result.Error == nil {
+							if authErr := mirrorAuthError(result, singleMirror); authErr != nil {
+								downloadErr = authErr
+								break downloadLoop
+							}
+						}
 						downloadErr = fmt.Errorf("download error")
 						break downloadLoop
 					}
@@ -431,6 +451,10 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 				_ = os.Remove(archivePath)
 				if errors.Is(downloadErr, context.Canceled) {
 					return context.Canceled
+				}
+				if isMirrorAccessError(downloadErr) {
+					status.Downloads--
+					return downloadErr
 				}
 				continue
 			}
@@ -453,9 +477,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		status.Downloads--
 
 		if !downloaded {
-			err := fmt.Errorf("Node.js v%s not found on server/mirror", version)
-			status.Alert(err)
-			return err
+			return fmt.Errorf("Node.js v%s not found on server/mirror", version)
 		}
 
 		if logf != nil {
@@ -464,7 +486,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 
 		if shouldSave && cacheFile != "" {
 			status.TotalCached++
-			if err := fs.CopyFile(archivePath, cacheFile); err != nil {
+			if err := copyVerifiedArchiveToCache(archivePath, cacheFile); err != nil {
 				return err
 			}
 			if txn != nil && !txn.cached {
@@ -503,6 +525,10 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	publisher, err := verifyAllowedSigner(filepath.Join(installDir, "node.exe"))
 	if err != nil {
 		return fmt.Errorf("unable to verify Node.js signer for v%s: %w", version, err)
+	}
+
+	if err := verifycache.SignNodeCache(filepath.Join(installDir, "node.exe")); err != nil {
+		log.Logf("verify cache warning for v%s: %v", version, err)
 	}
 
 	_ = fs.HardenManagedDirectory(installDir)

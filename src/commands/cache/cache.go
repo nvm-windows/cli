@@ -12,6 +12,11 @@ import (
 var Store cacheDir = load()
 var root string
 
+// ReloadStore re-reads cache paths from the current bootstrap/settings context.
+func ReloadStore() {
+	Store = load()
+}
+
 type cacheDir struct {
 	Metadata string `json:"metadata" label:"Metadata"`
 	Versions string `json:"versions" label:"Versions"`

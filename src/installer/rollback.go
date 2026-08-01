@@ -2,6 +2,7 @@ package installer
 
 import (
 	"common/fs"
+	"common/verifycache"
 	"fmt"
 	"nvm/log"
 	"os"
@@ -31,15 +32,13 @@ func rollbackCanceledInstall(txn *Transaction, status *Status) {
 	}
 
 	if txn.cachedNew && !txn.cached && txn.cacheFile != "" {
-		if err := os.Remove(txn.cacheFile); err != nil && !os.IsNotExist(err) {
-			status.Alert(fmt.Sprintf("rollback warning for v%s: failed to remove cache file %s: %v", txn.version, txn.cacheFile, err))
-		} else {
-			log.Logf("Removed Node.js v%s from cache (rollback)", txn.version)
-		}
+		invalidateCachedNodeArchive(txn.cacheFile)
+		log.Logf("Removed Node.js v%s from cache (rollback)", txn.version)
 	}
 
 	if txn.installedNew && !txn.installed {
 		unregisterNodeVersion(txn.version)
+		_ = verifycache.ClearNodeCache(filepath.Join(txn.installDir, "node.exe"))
 		if err := cleanupInstallDir(txn.installDir); err != nil {
 			status.Alert(fmt.Sprintf("rollback warning for v%s: failed to remove install dir %s: %v", txn.version, txn.installDir, err))
 		}
@@ -95,12 +94,10 @@ func clearAttributesRecursive(root string) error {
 		if info, err := os.Lstat(p); err != nil {
 			continue
 		} else if info.IsDir() {
-			os.Chmod(p, 0o777)
 			fs.ClearHidden(p)
 			continue
 		}
 
-		os.Chmod(p, 0o666)
 		clearNormal(p)
 	}
 

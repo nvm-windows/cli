@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"common/fs"
+	"common/verifycache"
 	prefs "common/preferences"
 	"common/registry"
 	"common/settings"
@@ -25,6 +27,21 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func unlockShimLayoutForTestCleanup(t *testing.T) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		shimDir, err := ShimDir()
+		if err == nil {
+			_ = fs.UnlockShimDirectory(shimDir)
+		}
+		proxyPath, err := DataProxyPath()
+		if err == nil {
+			_ = fs.UnlockProxyExecutable(proxyPath)
+		}
+	})
+}
+
 func TestEnsureUserProfileInitializedCreatesShimModeLayout(t *testing.T) {
 	root := t.TempDir()
 	resetBootstrapState(t)
@@ -43,6 +60,8 @@ func TestEnsureUserProfileInitializedCreatesShimModeLayout(t *testing.T) {
 	assertPathExists(t, filepath.Join(root, ".shim"))
 	assertPathExists(t, filepath.Join(root, ".link"))
 	assertPathExists(t, filepath.Join(root, ".nodejs"))
+	assertPathExists(t, filepath.Join(root, ".verify"))
+	assertPathExists(t, verifycache.PubKeyPath(root))
 	assertBootstrapVersion(t, currentBootstrapVersion)
 	if _, err := os.Stat(filepath.Join(root, ".nodejs")); err != nil {
 		t.Fatalf("Stat(.nodejs) error = %v", err)
@@ -79,6 +98,55 @@ func TestEnsureUserProfileInitializedCreatesLinkModeLayout(t *testing.T) {
 	assertBootstrapVersion(t, currentBootstrapVersion)
 	if _, err := os.Stat(filepath.Join(root, ".nodejs")); err != nil {
 		t.Fatalf("Stat(.nodejs) error = %v", err)
+	}
+}
+
+func TestEnsureUserProfileInitializedRepairsWrongNodejsTarget(t *testing.T) {
+	root := t.TempDir()
+	resetBootstrapState(t)
+
+	if err := settings.Put("root", filepath.Join(root, "installs")); err != nil {
+		t.Fatalf("Put(root) error = %v", err)
+	}
+	if err := settings.Put("mode", "shim"); err != nil {
+		t.Fatalf("Put(mode) error = %v", err)
+	}
+	if err := settings.Put("enabled", true); err != nil {
+		t.Fatalf("Put(enabled) error = %v", err)
+	}
+
+	if err := EnsureHiddenDir(filepath.Join(root, ".shim")); err != nil {
+		t.Fatalf("EnsureHiddenDir(.shim) error = %v", err)
+	}
+	if err := EnsureHiddenDir(filepath.Join(root, ".link")); err != nil {
+		t.Fatalf("EnsureHiddenDir(.link) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".shim", "node.exe"), []byte("node-shim-stub"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.shim\\node.exe) error = %v", err)
+	}
+	if err := link.Link(filepath.Join(root, ".link"), filepath.Join(root, ".nodejs")); err != nil {
+		t.Fatalf("Link(.link -> .nodejs) error = %v", err)
+	}
+	if err := registry.Put(currentBootstrapVersion, bootstrapVersionPath()); err != nil {
+		t.Fatalf("Put(bootstrap version) error = %v", err)
+	}
+
+	if err := EnsureUserProfileInitialized(); err != nil {
+		t.Fatalf("EnsureUserProfileInitialized() error = %v", err)
+	}
+
+	targetProbe := filepath.Join(root, ".shim", "node.exe")
+	linkProbe := filepath.Join(root, ".nodejs", "node.exe")
+	targetInfo, err := os.Lstat(targetProbe)
+	if err != nil {
+		t.Fatalf("Lstat(.shim\\node.exe) error = %v", err)
+	}
+	linkInfo, err := os.Lstat(linkProbe)
+	if err != nil {
+		t.Fatalf("Lstat(.nodejs\\node.exe) error = %v", err)
+	}
+	if !os.SameFile(targetInfo, linkInfo) {
+		t.Fatalf(".nodejs does not resolve to .shim")
 	}
 }
 
@@ -432,7 +500,7 @@ func TestSyncSharedExecutableSkipsMissingSource(t *testing.T) {
 
 func resetBootstrapState(t *testing.T) {
 	t.Helper()
-
+	unlockShimLayoutForTestCleanup(t)
 	if err := settings.Del("root"); err != nil {
 		t.Fatalf("Del(root) error = %v", err)
 	}

@@ -223,7 +223,7 @@ func (s *Status) Done(fn ...func(args ...string)) {
 	}
 
 	elapsed := time.Since(s.start).Truncate(time.Second)
-	if elapsed > 0 {
+	if elapsed > 0 && (s.TotalInstalled > 0 || s.TotalCached > 0) {
 		fmt.Printf("Completed in %v\n", elapsed)
 	}
 }

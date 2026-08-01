@@ -110,7 +110,7 @@ func (i *Docs) Run() error {
 		}
 	}
 
-	fmt.Println(`The following configuration options can be set using "nvm cfg set <key>=<value>"` + "\n\n")
+	fmt.Print("The following configuration options can be set using \"nvm cfg set <key>=<value>\"\n\n")
 
 	return nil
 }

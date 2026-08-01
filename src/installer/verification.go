@@ -3,13 +3,13 @@ package installer
 import (
 	"bufio"
 	"common/settings"
+	"common/verify"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"unsafe"
 
@@ -69,113 +69,16 @@ func verifyNodeSHASUM(file, shasum string) (bool, error) {
 }
 
 func verifyAllowedSigner(exePath string) (string, error) {
-	allowed := normalizeAllowedSigners(settings.Global().AllowedSigners)
-	if len(allowed) == 0 {
-		return "", fmt.Errorf("no allowed code signers configured")
-	}
-
-	signer := signerOrganization(exePath)
-	if signer == "" {
-		return "", fmt.Errorf("unable to verify code signer for %s", filepath.Base(exePath))
-	}
-
-	if !isAllowedSigner(signer, allowed) {
-		return signer, fmt.Errorf("code signer %q is not allowed (allowed signers: %s)", signer, strings.Join(allowed, ", "))
-	}
-
-	return signer, nil
-}
-
-func normalizeAllowedSigners(signers []string) []string {
-	normalized := make([]string, 0, len(signers))
-	for _, signer := range signers {
-		trimmed := strings.TrimSpace(signer)
-		if trimmed == "" {
-			continue
-		}
-		normalized = append(normalized, trimmed)
-	}
-	return normalized
-}
-
-func isAllowedSigner(signer string, allowed []string) bool {
-	candidate := strings.TrimSpace(signer)
-	if candidate == "" {
-		return false
-	}
-	for _, allowedSigner := range allowed {
-		if strings.EqualFold(candidate, strings.TrimSpace(allowedSigner)) {
-			return true
-		}
-	}
-	return false
+	// WinVerifyTrust first, then AllowedSigners vendor policy (settings.AllowedSigners).
+	return verify.VerifyNodeExecutable(exePath, settings.Global().AllowedSigners)
 }
 
 func nodePublisher(exePath string) string {
 	const fallback = "OpenJS Foundation"
-	if name := signerOrganization(exePath); name != "" {
+	if name := verify.SignerOrganization(exePath); name != "" {
 		return name
 	}
 	return peCompanyName(exePath, fallback)
-}
-
-func signerOrganization(exePath string) string {
-	exeW, err := windows.UTF16PtrFromString(exePath)
-	if err != nil {
-		return ""
-	}
-
-	crypt32dll := windows.NewLazySystemDLL("crypt32.dll")
-	cryptMsgGetParam := crypt32dll.NewProc("CryptMsgGetParam")
-	cryptMsgClose := crypt32dll.NewProc("CryptMsgClose")
-
-	var certStore, msg windows.Handle
-	err = windows.CryptQueryObject(
-		windows.CERT_QUERY_OBJECT_FILE,
-		unsafe.Pointer(exeW),
-		windows.CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
-		windows.CERT_QUERY_FORMAT_FLAG_BINARY,
-		0, nil, nil, nil,
-		&certStore, &msg, nil,
-	)
-	if err != nil {
-		return ""
-	}
-	defer windows.CertCloseStore(certStore, 0)
-	defer cryptMsgClose.Call(uintptr(msg))
-
-	const cmsgSignerCertInfoParam = 7
-	var size uint32
-	r, _, _ := cryptMsgGetParam.Call(uintptr(msg), cmsgSignerCertInfoParam, 0, 0, uintptr(unsafe.Pointer(&size)))
-	if r == 0 || size == 0 {
-		return ""
-	}
-	buf := make([]byte, size)
-	r, _, _ = cryptMsgGetParam.Call(uintptr(msg), cmsgSignerCertInfoParam, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)))
-	if r == 0 {
-		return ""
-	}
-
-	signerCertInfo := (*windows.CertInfo)(unsafe.Pointer(&buf[0]))
-	cert, _ := windows.CertFindCertificateInStore(
-		certStore,
-		windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING,
-		0,
-		windows.CERT_FIND_SUBJECT_CERT,
-		unsafe.Pointer(signerCertInfo), nil,
-	)
-	runtime.KeepAlive(buf)
-	if cert == nil {
-		return ""
-	}
-
-	n := windows.CertGetNameString(cert, windows.CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nil, nil, 0)
-	if n == 0 {
-		return ""
-	}
-	nameBuf := make([]uint16, n)
-	windows.CertGetNameString(cert, windows.CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nil, &nameBuf[0], n)
-	return strings.TrimSpace(windows.UTF16ToString(nameBuf))
 }
 
 func peCompanyName(exePath, fallback string) string {

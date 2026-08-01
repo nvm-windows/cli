@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	prefs "common/preferences"
@@ -18,11 +19,60 @@ import (
 	"github.com/alecthomas/kong"
 )
 
-const commandTestRegistryRoot = "HKCU/Software/NVMTest/config_set_test"
+const commandTestRegistryPrefix = "HKCU/Software/NVMTest/config_"
+
+var (
+	cfgRegistryMu      sync.Mutex
+	activeCfgRegistry  string
+	boundRegistryTest  string
+)
+
+func applyActiveTestRegistry() {
+	if activeCfgRegistry == "" {
+		return
+	}
+	prefs.ROOT = activeCfgRegistry
+	prefs.ROOTS = []string{activeCfgRegistry}
+	settings.Load(true)
+}
+
+func bindTestRegistry(t *testing.T) {
+	t.Helper()
+
+	cfgRegistryMu.Lock()
+	if boundRegistryTest == t.Name() {
+		applyActiveTestRegistry()
+		cfgRegistryMu.Unlock()
+		return
+	}
+	boundRegistryTest = t.Name()
+
+	safeName := strings.NewReplacer("/", "_", "\\", "_", " ", "_", ":", "_").Replace(t.Name())
+	if len(safeName) > 80 {
+		safeName = safeName[len(safeName)-80:]
+	}
+
+	key := commandTestRegistryPrefix + safeName
+	activeCfgRegistry = key
+	prefs.ROOT = key
+	prefs.ROOTS = []string{key}
+
+	regPath := strings.ReplaceAll(strings.TrimPrefix(key, "HKCU/"), "/", `\`)
+	_ = exec.Command("reg", "delete", `HKCU\`+regPath, "/f").Run()
+	settings.Load(true)
+
+	t.Cleanup(func() {
+		cfgRegistryMu.Lock()
+		if boundRegistryTest == t.Name() {
+			boundRegistryTest = ""
+			activeCfgRegistry = ""
+		}
+		cfgRegistryMu.Unlock()
+	})
+	cfgRegistryMu.Unlock()
+}
 
 func TestMain(m *testing.M) {
-	prefs.ROOT = commandTestRegistryRoot
-	prefs.ROOTS = []string{prefs.ROOT}
 	code := m.Run()
 	exec.Command("reg", "delete", `HKCU\Software\NVMTest`, "/f").Run() //nolint:errcheck
 	os.Exit(code)
@@ -30,12 +80,23 @@ func TestMain(m *testing.M) {
 
 func runSetCfg(t *testing.T, pairs ...string) error {
 	t.Helper()
-	return (&Set{Pairs: pairs}).Run()
+	bindTestRegistry(t)
+
+	cfgRegistryMu.Lock()
+	applyActiveTestRegistry()
+	err := (&Set{Pairs: pairs}).Run()
+	settings.Load(true)
+	cfgRegistryMu.Unlock()
+	return err
 }
 
 func getSetting(t *testing.T, name string) interface{} {
 	t.Helper()
+
+	cfgRegistryMu.Lock()
+	applyActiveTestRegistry()
 	value, err := settings.Get(name)
+	cfgRegistryMu.Unlock()
 	if err != nil {
 		t.Fatalf("Get(%q) unexpected error: %v", name, err)
 	}
@@ -99,22 +160,20 @@ func TestSet_RunPersistsValidSettings(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	err := runSetCfg(t,
-		"mode=junction",
 		"root="+root,
 		"proxy=https://proxy.example.com:8080",
 		"node_mirror=https://nodejs.org/dist,https://mirror.example.com/node",
 		"npm_mirror=https://github.com/npm/cli/archive/",
-		"active_version=22.0.0",
 		"auto_use=1",
 		"auto_install=0",
 	)
 	if err != nil {
 		t.Fatalf("Run(valid pairs) unexpected error: %v", err)
 	}
-
-	if got := getSetting(t, "mode"); got != "junction" {
-		t.Fatalf("mode: expected %q, got %v", "junction", got)
+	if err := settings.Put("active_version", "22.0.0"); err != nil {
+		t.Fatalf("seed active_version: %v", err)
 	}
+
 	if got := getSetting(t, "root"); got != root {
 		t.Fatalf("root: expected %q, got %v", root, got)
 	}
@@ -137,7 +196,7 @@ func TestSet_RunPersistsValidSettings(t *testing.T) {
 }
 
 func TestSet_RunRejectsInvalidMode(t *testing.T) {
-	expectRunErrorContains(t, []string{"mode=invalid"}, "must be one of: shim, symlink, junction")
+	expectRunErrorContains(t, []string{"mode=invalid"}, "invalid mode: invalid")
 }
 
 func TestSet_RunRejectsInvalidRoot(t *testing.T) {
@@ -157,19 +216,19 @@ func TestSet_RunRejectsInvalidNpmMirror(t *testing.T) {
 }
 
 func TestSet_RunRejectsInvalidActiveVersion(t *testing.T) {
-	expectRunErrorContains(t, []string{"active_version=22"}, "is not a valid semantic version")
+	expectRunErrorContains(t, []string{"active_version=22"}, `invalid configuration key "active_version"`)
 }
 
 func TestSet_RunRejectsInvalidAutoUse(t *testing.T) {
-	expectRunErrorContains(t, []string{"auto_use=true"}, "auto_use must be 0 or 1")
+	expectRunErrorContains(t, []string{"auto_use=2"}, "auto_use must be 0, 1, true, or false")
 }
 
 func TestSet_RunRejectsInvalidAutoInstall(t *testing.T) {
-	expectRunErrorContains(t, []string{"auto_install=2"}, "auto_install must be 0 or 1")
+	expectRunErrorContains(t, []string{"auto_install=2"}, "auto_install must be 0, 1, true, or false")
 }
 
 func TestSet_RunAggregatesMultipleValidationErrors(t *testing.T) {
-	err := runSetCfg(t, "proxy=bad", "active_version=22")
+	err := runSetCfg(t, "proxy=bad", "auto_use=2")
 	if err == nil {
 		t.Fatal("expected aggregated validation error, got nil")
 	}
@@ -181,43 +240,32 @@ func TestSet_RunAggregatesMultipleValidationErrors(t *testing.T) {
 	if !strings.Contains(message, "proxy \"bad\" is not a valid URL") {
 		t.Fatalf("expected proxy validation error in %q", message)
 	}
-	if !strings.Contains(message, "active_version \"22\" is not a valid semantic version") {
-		t.Fatalf("expected active_version validation error in %q", message)
+	if !strings.Contains(message, "auto_use must be 0, 1, true, or false") {
+		t.Fatalf("expected auto_use validation error in %q", message)
 	}
 }
 
 func TestSet_RunLastValueWinsForDuplicateKeys(t *testing.T) {
-	if err := runSetCfg(t, "mode=shim", "mode=symlink"); err != nil {
+	if err := runSetCfg(t, "auto_use=0", "auto_use=1"); err != nil {
 		t.Fatalf("Run(duplicate keys) unexpected error: %v", err)
 	}
 
-	if got := getSetting(t, "mode"); got != "symlink" {
+	if got := getSetting(t, "auto_use"); got != true {
 		t.Fatalf("expected duplicate key handling to keep last value, got %v", got)
 	}
 }
 
-func TestSet_RunPersistsAccessTokenAndRedactsOutput(t *testing.T) {
-	const accessToken = "header.payload.signature"
-
-	output, err := captureStdout(t, func() error {
-		return runSetCfg(t, "access_token="+accessToken)
-	})
-	if err != nil {
-		t.Fatalf("Set.Run(access_token) unexpected error: %v", err)
-	}
-
-	if got := getSetting(t, "access_token"); got != accessToken {
-		t.Fatalf("expected access_token to persist raw value, got %v", got)
-	}
-
-	if strings.Contains(output, accessToken) {
-		t.Fatalf("expected access_token output to redact the token, got %q", output)
-	}
-	if !strings.Contains(output, "access_token set to:") {
-		t.Fatalf("expected access_token confirmation output, got %q", output)
-	}
-	if !strings.Contains(output, "(redacted)") {
-		t.Fatalf("expected access_token output to show redaction marker, got %q", output)
+func TestSet_RunRejectsLicensingKeys(t *testing.T) {
+	for _, key := range []string{"access_token", "access_key"} {
+		t.Run(key, func(t *testing.T) {
+			err := runSetCfg(t, key+"=secret-value")
+			if err == nil {
+				t.Fatalf("Set.Run(%q) expected error, got nil", key)
+			}
+			if !strings.Contains(err.Error(), `must be set with "nvm license set"`) {
+				t.Fatalf("Set.Run(%q) error = %v, want licensing guidance", key, err)
+			}
+		})
 	}
 }
 
@@ -243,7 +291,8 @@ func TestGet_RunSingleValue(t *testing.T) {
 
 func TestGet_RunRedactsAccessToken(t *testing.T) {
 	const accessToken = "header.payload.signature"
-	if err := runSetCfg(t, "access_token="+accessToken); err != nil {
+	bindTestRegistry(t)
+	if err := settings.Put("access_token", accessToken); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
@@ -280,9 +329,17 @@ func TestGet_RunRedactsAccessToken(t *testing.T) {
 }
 
 func TestGet_RunMultipleValues(t *testing.T) {
-	if err := runSetCfg(t, "mode=symlink", "auto_use=1"); err != nil {
+	bindTestRegistry(t)
+	root := filepath.Join(os.TempDir(), "nvm_config_get_multi_root")
+	defer os.RemoveAll(root)
+
+	if err := runSetCfg(t, "root="+root, "auto_use=1"); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
+	if err := settings.Put("mode", "link"); err != nil {
+		t.Fatalf("Put(mode) setup failed: %v", err)
+	}
+	settings.Load(true)
 
 	output, err := captureStdout(t, func() error {
 		return (&Get{Name: []string{"mode", "auto_use"}}).Run()
@@ -291,7 +348,7 @@ func TestGet_RunMultipleValues(t *testing.T) {
 		t.Fatalf("Get.Run() unexpected error: %v", err)
 	}
 
-	if !strings.Contains(output, "mode: symlink") {
+	if !strings.Contains(output, "mode: link") {
 		t.Fatalf("expected mode output, got %q", output)
 	}
 	if !strings.Contains(output, "auto_use: true") {
@@ -300,9 +357,14 @@ func TestGet_RunMultipleValues(t *testing.T) {
 }
 
 func TestGet_RunJSON(t *testing.T) {
-	if err := runSetCfg(t, "mode=junction", "auto_install=0"); err != nil {
+	bindTestRegistry(t)
+	if err := runSetCfg(t, "auto_install=0"); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
+	if err := settings.Put("mode", "link"); err != nil {
+		t.Fatalf("Put(mode) setup failed: %v", err)
+	}
+	settings.Load(true)
 
 	output, err := captureStdout(t, func() error {
 		return (&Get{Name: []string{"mode", "auto_install"}, FlagJSON: constant.FlagJSON{JSON: true}}).Run()
@@ -316,8 +378,8 @@ func TestGet_RunJSON(t *testing.T) {
 		t.Fatalf("failed to decode JSON output %q: %v", output, err)
 	}
 
-	if data["mode"] != "junction" {
-		t.Fatalf("expected mode=junction, got %#v", data["mode"])
+	if data["mode"] != "link" {
+		t.Fatalf("expected mode=link, got %#v", data["mode"])
 	}
 	if data["auto_install"] != false {
 		t.Fatalf("expected auto_install=false, got %#v", data["auto_install"])
@@ -325,7 +387,8 @@ func TestGet_RunJSON(t *testing.T) {
 }
 
 func TestDel_RunDeletesSetting(t *testing.T) {
-	if err := runSetCfg(t, "active_version=22.0.0"); err != nil {
+	bindTestRegistry(t)
+	if err := settings.Put("active_version", "22.0.0"); err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
 
@@ -343,6 +406,7 @@ func TestDel_RunDeletesSetting(t *testing.T) {
 }
 
 func TestDel_RunUnknownSettingFails(t *testing.T) {
+	bindTestRegistry(t)
 	if err := (&Del{Name: "missing"}).Run(); err == nil {
 		t.Fatal("expected delete of unknown setting to fail")
 	}
@@ -354,13 +418,17 @@ func TestList_RunPrintsAllSettings(t *testing.T) {
 
 	if err := runSetCfg(t,
 		"root="+root,
-		"active_version=20.0.0",
 		"cache_downloads=1",
 		"auto_use=1",
 		"auto_install=0",
-		"access_token=header.payload.signature",
 	); err != nil {
 		t.Fatalf("setup failed: %v", err)
+	}
+	if err := settings.Put("active_version", "20.0.0"); err != nil {
+		t.Fatalf("seed active_version: %v", err)
+	}
+	if err := settings.Put("access_token", "header.payload.signature"); err != nil {
+		t.Fatalf("seed access_token: %v", err)
 	}
 
 	output, err := captureStdout(t, func() error {

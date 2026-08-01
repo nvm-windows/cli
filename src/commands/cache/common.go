@@ -5,8 +5,26 @@ import (
 	"os"
 	"strings"
 
+	"common/verifycache"
+
 	"github.com/ncruces/zenity"
 )
+
+const legacyCacheDigestSuffix = ".sha256"
+
+func removeCachedArchiveFile(path string) {
+	_ = os.Remove(path)
+	_ = verifycache.ClearDownloadArchiveCache(path)
+	_ = os.Remove(path + legacyCacheDigestSuffix)
+}
+
+func removeCachedArchiveFileErr(path string) error {
+	removeCachedArchiveFile(path)
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("failed to remove %s", path)
+	}
+	return nil
+}
 
 type prompt struct {
 	Prompt bool `flag:"prompt" short:"p" help:"Prompt to select specific cached artifacts."`
@@ -18,7 +36,6 @@ func promptRemoveSelected(items [][]string, title ...string) error {
 		label = title[0]
 	}
 
-	// Build the options list for zenity.
 	opts := make([]string, len(items))
 	for i, item := range items {
 		opts[i] = item[0]
@@ -45,7 +62,7 @@ func promptRemoveSelected(items [][]string, title ...string) error {
 			if item[0] == sel {
 				count++
 
-				if err := os.Remove(item[1]); err != nil && !os.IsNotExist(err) {
+				if err := removeCachedArchiveFileErr(item[1]); err != nil {
 					fmt.Fprintf(os.Stderr, "failed to remove %s: %v\n", item[1], err)
 				} else {
 					fmt.Fprintf(os.Stdout, "Removed %s\n", item[0])

@@ -6,7 +6,6 @@ import (
 	"common/registry"
 	"common/settings"
 	"common/system"
-	"common/token"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -42,6 +41,7 @@ type Env struct {
 
 type installData struct {
 	Version    string            `json:"version"`
+	BuildTime  string            `json:"build_time"`
 	InstallDir string            `json:"path"`
 	Upgrade    string            `json:"upgrade"`
 	Variables  map[string]string `json:"variables"`
@@ -96,10 +96,11 @@ type data struct {
 }
 
 type License struct {
-	Plan    string   `json:"plan"`
-	Roles   []string `json:"roles"`
-	Issued  string   `json:"issued"`
-	Expires string   `json:"expires"`
+	Plan         string   `json:"plan"`
+	Roles        []string `json:"roles"`
+	Issued       string   `json:"issued"`
+	Expires      string   `json:"expires"`
+	Verification string   `json:"verification,omitempty"`
 }
 
 var (
@@ -233,29 +234,20 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	}
 
 	var activeLicense *License
-	if license.AccessToken != nil && license.AccessToken.Claims != nil {
-		if claims, ok := license.AccessToken.Claims.(*token.TokenClaims); ok {
-			issued := "unknown"
-			expires := "unknown"
-			if claims.IssuedAt != nil {
-				issued = formatUserLocalDateTime(claims.IssuedAt.Time)
-			}
-			if claims.ExpiresAt != nil {
-				expires = formatUserLocalDateTime(claims.ExpiresAt.Time)
-			}
-
-			activeLicense = &License{
-				Plan:    claims.Plan,
-				Roles:   claims.Roles,
-				Issued:  issued,
-				Expires: expires,
-			}
+	if info, ok := license.InspectAccessToken(); ok {
+		activeLicense = &License{
+			Plan:         info.Plan,
+			Roles:        info.Roles,
+			Issued:       info.Issued,
+			Expires:      info.Expires,
+			Verification: info.Verification,
 		}
 	}
 
 	out := data{
 		Installation: installData{
 			Version:    vars["version"],
+			BuildTime:  vars["buildTime"],
 			InstallDir: path(programRoot),
 			Upgrade:    map[bool]string{true: "blocked", false: "allowed"}[cfg.DisableUpgrade],
 			// Variables: map[string]string{
@@ -362,6 +354,9 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	// nvm version
 	fmt.Fprintf(t, "%s%s Version\t: %s\n", indent(1), branch, out.Installation.Version)
 
+	// nvm build
+	fmt.Fprintf(t, "%s%s Build\t: %s\n", indent(1), branch, out.Installation.BuildTime)
+
 	// nvm install root
 	hasActiveLicense := out.ActiveLicense != nil
 
@@ -372,6 +367,9 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		}
 
 		fmt.Fprintf(t, "%s%s License\t: %s%s\n", indent(1), branch, out.ActiveLicense.Plan, free)
+		if out.ActiveLicense.Verification != "" && out.ActiveLicense.Verification != "verified" {
+			fmt.Fprintf(t, "%s%s Verification\t: %s\n", indent(1), branch, out.ActiveLicense.Verification)
+		}
 		fmt.Fprintf(t, "%s%s%s %s Issued\t: %s\n", indent(1), line, indent(1), branch, out.ActiveLicense.Issued)
 		fmt.Fprintf(t, "%s%s%s %s Expires\t: %s\n", indent(1), line, indent(1), end, out.ActiveLicense.Expires)
 	}

@@ -30,8 +30,17 @@ func (c *List) Run() error {
 		t = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	}
 
+	var aliasPairs []string
+	if raw != nil {
+		var ok bool
+		aliasPairs, ok = raw.([]string)
+		if !ok {
+			return fmt.Errorf("aliases setting has unexpected type %T", raw)
+		}
+	}
+
 	count := 0
-	for _, pair := range raw.([]string) {
+	for _, pair := range aliasPairs {
 		parts := strings.SplitN(pair, "=", 2)
 
 		if len(c.Aliases) > 0 {

@@ -78,7 +78,7 @@ func (c *RemoveVersion) Run() error {
 		}
 
 		path := filepath.Join(Store.Versions, fmt.Sprintf("node-v%s-win-%s.7z", ver, arch))
-		if err := os.Remove(path); err != nil {
+		if err := removeCachedArchiveFileErr(path); err != nil {
 			err := fmt.Errorf("Failed to remove version '%s' from cache: %v", ver, err)
 			log.Error(err)
 			fmt.Fprintf(os.Stderr, "%v\n", err)

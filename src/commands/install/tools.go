@@ -2,6 +2,7 @@ package install
 
 import (
 	"common/settings"
+	"common/verify"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +32,7 @@ func (c *Tools) Run() error {
 	}
 
 	var newest *semver.Version
+	var newestVersionDir string
 	var newestToolsPath string
 
 	for _, entry := range entries {
@@ -49,13 +51,15 @@ func (c *Tools) Run() error {
 			continue
 		}
 
-		toolsPath := filepath.Join(installRoot, versionDir, "install_tools.bat")
+		versionPath := filepath.Join(installRoot, versionDir)
+		toolsPath := filepath.Join(versionPath, "install_tools.bat")
 		if _, statErr := os.Stat(toolsPath); statErr != nil {
 			continue
 		}
 
 		if newest == nil || version.GreaterThan(newest) {
 			newest = version
+			newestVersionDir = versionPath
 			newestToolsPath = toolsPath
 		}
 	}
@@ -64,11 +68,21 @@ func (c *Tools) Run() error {
 		return fmt.Errorf("no installed versions with install_tools.bat found")
 	}
 
+	expectedToolsPath := filepath.Join(newestVersionDir, "install_tools.bat")
+	if !strings.EqualFold(filepath.Clean(newestToolsPath), filepath.Clean(expectedToolsPath)) {
+		return fmt.Errorf("refusing to run install_tools.bat: unexpected path %s", newestToolsPath)
+	}
+
+	nodeExe := filepath.Join(newestVersionDir, "node.exe")
+	if _, err := verify.VerifyNodeExecutable(nodeExe, verify.EffectiveAllowedSigners(cfg.AllowedSigners)); err != nil {
+		return fmt.Errorf("refusing to run install_tools.bat: %s failed verification: %w", nodeExe, err)
+	}
+
 	cmd := exec.Command("cmd.exe", "/d", "/c", newestToolsPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	cmd.Dir = filepath.Dir(newestToolsPath)
+	cmd.Dir = newestVersionDir
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run %s: %w", newestToolsPath, err)

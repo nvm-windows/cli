@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"common/license"
 	"common/settings"
 	"common/system"
 	"fmt"
@@ -103,30 +102,18 @@ func main() {
 		fmt.Fprint(os.Stderr, err.Error())
 		os.Exit(1)
 	}
-	currentAccessToken, _ := settings.Get("access_token")
-
-	edition := "community"
-	var tokenErr error
-	if err := license.Activate(); err == nil && license.AccessToken != nil {
-		edition = license.AccessToken.Type()
-	} else {
-		tokenErr = err
-	}
-	updatedAccessToken, _ := settings.Get("access_token")
-	if msg, ok := settings.ChangeAuditMessage("access_token", currentAccessToken, updatedAccessToken); ok {
-		log.Log(msg)
-	}
 
 	cli := kong.Parse(
 		root,
 		kong.Name(name),
-		kong.Description(fmt.Sprintf("%s\nv%s, %s edition.", description, version, edition)),
+		kong.Description(fmt.Sprintf("%s\nv%s.", description, version)),
 		kong.UsageOnError(),
 		kong.Vars{
 			"app":      name,
 			"version":  version,
 			"node":     "Node.js",
-			"cfg_opts": strings.Join(settings.List(), ", "),
+			"buildTime": buildTime,
+			"cfg_opts": strings.Join(settings.ListUserCfg(), ", "),
 		},
 		kong.HelpOptions{
 			Compact:             true,
@@ -160,10 +147,6 @@ func main() {
 			}
 
 			fmt.Fprintln(os.Stdout, helpHint+"\nAdditional help available at https://docs.nvm-windows.com")
-
-			if tokenErr != nil {
-				fmt.Fprintln(os.Stderr, "\nNote: Could not obtain access token.")
-			}
 
 			return nil
 		}),

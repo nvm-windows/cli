@@ -2,13 +2,37 @@ package installer
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	prefs "common/preferences"
+	"common/settings"
 	"nvm/bootstrap"
 )
+
+func setupReshimTestProfile(t *testing.T) {
+	t.Helper()
+
+	root := t.TempDir()
+	key := `HKCU/Software/NVMTest/installer_reshim/` + strings.ReplaceAll(t.Name(), "/", "_")
+	prefs.ROOT = key
+	prefs.ROOTS = []string{key}
+	settings.Load()
+
+	if err := settings.Put("root", filepath.Join(root, "installs")); err != nil {
+		t.Fatalf("Put(root) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".shim"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.shim) error = %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = exec.Command("reg", "delete", `HKCU\Software\NVMTest\installer_reshim`, "/f").Run()
+	})
+}
 
 const (
 	reshimTestHelperEnv   = "NVM_RESHIM_TEST_SYNC_HELPER"
@@ -36,7 +60,7 @@ func maybeRunReshimTestHelper() (int, bool) {
 	return 0, true
 }
 
-func installReshimTestSyncBinary(t *testing.T) string {
+func installReshimTestBinary(t *testing.T) string {
 	t.Helper()
 
 	currentExe, err := os.Executable()
@@ -44,19 +68,19 @@ func installReshimTestSyncBinary(t *testing.T) string {
 		t.Fatalf("Executable() error = %v", err)
 	}
 
-	syncPath, err := bootstrap.UtilityPath("sync.exe")
+	reshimPath, err := bootstrap.UtilityPath("reshim.exe")
 	if err != nil {
-		t.Fatalf("UtilityPath(sync.exe) error = %v", err)
+		t.Fatalf("UtilityPath(reshim.exe) error = %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(syncPath), 0755); err != nil {
-		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(syncPath), err)
+	if err := os.MkdirAll(filepath.Dir(reshimPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(reshimPath), err)
 	}
 
-	originalData, err := os.ReadFile(syncPath)
+	originalData, err := os.ReadFile(reshimPath)
 	hadOriginal := err == nil
 	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("ReadFile(%q) error = %v", syncPath, err)
+		t.Fatalf("ReadFile(%q) error = %v", reshimPath, err)
 	}
 
 	currentExeData, err := os.ReadFile(currentExe)
@@ -64,20 +88,20 @@ func installReshimTestSyncBinary(t *testing.T) string {
 		t.Fatalf("ReadFile(%q) error = %v", currentExe, err)
 	}
 
-	if err := os.WriteFile(syncPath, currentExeData, 0755); err != nil {
-		t.Fatalf("WriteFile(%q) error = %v", syncPath, err)
+	if err := os.WriteFile(reshimPath, currentExeData, 0o755); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", reshimPath, err)
 	}
 
 	t.Cleanup(func() {
 		if hadOriginal {
-			_ = os.WriteFile(syncPath, originalData, 0755)
+			_ = os.WriteFile(reshimPath, originalData, 0o755)
 			return
 		}
 
-		_ = os.Remove(syncPath)
+		_ = os.Remove(reshimPath)
 	})
 
-	return syncPath
+	return reshimPath
 }
 
 func readReshimTestInvocation(t *testing.T, recordPath string) (string, []string) {
@@ -96,9 +120,10 @@ func readReshimTestInvocation(t *testing.T, recordPath string) (string, []string
 	return filepath.Clean(lines[0]), lines[1:]
 }
 
-func TestReshimInvokesSyncCommand(t *testing.T) {
-	syncPath := installReshimTestSyncBinary(t)
-	recordPath := filepath.Join(t.TempDir(), "sync-invocation.txt")
+func TestReshimInvokesReshimUtility(t *testing.T) {
+	setupReshimTestProfile(t)
+	reshimPath := installReshimTestBinary(t)
+	recordPath := filepath.Join(t.TempDir(), "reshim-invocation.txt")
 	t.Setenv(reshimTestHelperEnv, "1")
 	t.Setenv(reshimTestRecordEnv, recordPath)
 	t.Setenv(reshimTestExitCodeEnv, "0")
@@ -108,24 +133,25 @@ func TestReshimInvokesSyncCommand(t *testing.T) {
 	}
 
 	gotPath, gotArgs := readReshimTestInvocation(t, recordPath)
-	if gotPath != syncPath {
-		t.Fatalf("reshim() path = %q, want %q", gotPath, syncPath)
+	if gotPath != reshimPath {
+		t.Fatalf("reshim() path = %q, want %q", gotPath, reshimPath)
 	}
-	if len(gotArgs) != 2 || gotArgs[0] != "reshim" || gotArgs[1] != "--silent" {
-		t.Fatalf("reshim() args = %v, want [reshim --silent]", gotArgs)
+	if len(gotArgs) != 1 || gotArgs[0] != "--silent" {
+		t.Fatalf("reshim() args = %v, want [--silent]", gotArgs)
 	}
 }
 
-func TestReshimWrapsSyncCommandFailure(t *testing.T) {
-	_ = installReshimTestSyncBinary(t)
+func TestReshimWrapsUtilityFailure(t *testing.T) {
+	setupReshimTestProfile(t)
+	_ = installReshimTestBinary(t)
 	t.Setenv(reshimTestHelperEnv, "1")
 	t.Setenv(reshimTestExitCodeEnv, "17")
 
 	err := reshim()
 	if err == nil {
-		t.Fatal("reshim() error = nil, want wrapped sync failure")
+		t.Fatal("reshim() error = nil, want wrapped reshim failure")
 	}
-	if got := err.Error(); !strings.Contains(got, "failed to reshim:") || !strings.Contains(got, "exit status 17") {
+	if got := err.Error(); !strings.Contains(got, "reshim failed:") || !strings.Contains(got, "exit status 17") {
 		t.Fatalf("reshim() error = %q, want wrapped exit status 17", got)
 	}
 }

@@ -19,8 +19,8 @@ type Set struct {
 }
 
 func (s *Set) Run() error {
-	validKeys := make(map[string]struct{}, len(settings.List()))
-	for _, key := range settings.List() {
+	validKeys := make(map[string]struct{}, len(settings.ListUserCfg()))
+	for _, key := range settings.ListUserCfg() {
 		validKeys[key] = struct{}{}
 	}
 
@@ -32,6 +32,9 @@ func (s *Set) Run() error {
 		}
 
 		if _, ok := validKeys[key]; !ok {
+			if settings.IsLicensingCfg(key) {
+				return fmt.Errorf("%q must be set with \"nvm license set\"", key)
+			}
 			return fmt.Errorf("invalid configuration key %q", key)
 		}
 

@@ -2,11 +2,12 @@ package installer
 
 import (
 	"bufio"
-	"common/fs"
+	commonfs "common/fs"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,20 +16,82 @@ import (
 	"github.com/bodgit/sevenzip"
 )
 
+var pinned7zCandidates = []string{
+	`C:\Program Files\7-Zip\7z.exe`,
+	`C:\Program Files (x86)\7-Zip\7z.exe`,
+}
+
+// archivePathProbeRoot is a stable root for zip-slip checks independent of destination.
+const archivePathProbeRoot = `C:\nvm-extract-validation`
+
 func find7zExe() string {
-	if path, err := exec.LookPath("7z.exe"); err == nil {
-		return path
-	}
-	candidates := []string{
-		`C:\Program Files\7-Zip\7z.exe`,
-		`C:\Program Files (x86)\7-Zip\7z.exe`,
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
+	for _, candidate := range pinned7zCandidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
 		}
 	}
 	return ""
+}
+
+func extractPathWithinRoot(root, target string) bool {
+	root = filepath.Clean(root)
+	target = filepath.Clean(target)
+	if root == target {
+		return true
+	}
+	return strings.HasPrefix(target, root+string(os.PathSeparator))
+}
+
+func validateRelPathUnderRoot(root, relPath, rawName string) error {
+	if relPath == "" {
+		return nil
+	}
+	cleanRoot := filepath.Clean(root)
+	target := filepath.Clean(filepath.Join(cleanRoot, relPath))
+	if !extractPathWithinRoot(cleanRoot, target) {
+		return fmt.Errorf("invalid archive path: %s", rawName)
+	}
+	return nil
+}
+
+func validateArchivePaths(archive string) error {
+	r, err := sevenzip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		relPath := archiveRelativePath(f.Name)
+		if err := validateRelPathUnderRoot(archivePathProbeRoot, relPath, f.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateExtractTree(root string) error {
+	cleanRoot := filepath.Clean(root)
+	info, err := os.Lstat(cleanRoot)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("extracted path escapes destination: %s", cleanRoot)
+	}
+
+	return filepath.WalkDir(cleanRoot, func(path string, entry iofs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !extractPathWithinRoot(cleanRoot, path) {
+			return fmt.Errorf("extracted path escapes destination: %s", path)
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink not allowed in extracted archive: %s", path)
+		}
+		return nil
+	})
 }
 
 func extract7zNative(ctx context.Context, szExe, archive, destination string) error {
@@ -38,7 +101,7 @@ func extract7zNative(ctx context.Context, szExe, archive, destination string) er
 	if err != nil {
 		return err
 	}
-	fs.SetHidden(tmpDir)
+	commonfs.SetHidden(tmpDir)
 	defer os.RemoveAll(tmpDir)
 
 	cmd := exec.CommandContext(ctx, szExe, "x", archive, "-o"+tmpDir, "-y", "-bb0", "-bsp0", "-bso0")
@@ -49,6 +112,10 @@ func extract7zNative(ctx context.Context, szExe, archive, destination string) er
 			return context.Canceled
 		}
 		return fmt.Errorf("7z extraction failed: %w", err)
+	}
+
+	if err = validateExtractTree(tmpDir); err != nil {
+		return fmt.Errorf("native extraction failed path validation: %w", err)
 	}
 
 	entries, err := os.ReadDir(tmpDir)
@@ -62,7 +129,14 @@ func extract7zNative(ctx context.Context, szExe, archive, destination string) er
 					return err
 				}
 			}
-			return os.Rename(filepath.Join(tmpDir, e.Name()), destination)
+			if err = os.Rename(filepath.Join(tmpDir, e.Name()), destination); err != nil {
+				return err
+			}
+			if err = validateExtractTree(destination); err != nil {
+				_ = os.RemoveAll(destination)
+				return fmt.Errorf("native extraction failed path validation: %w", err)
+			}
+			return nil
 		}
 	}
 	return fmt.Errorf("no directory found in extracted archive")
@@ -78,8 +152,8 @@ func extract7zGo(ctx context.Context, archive, destination string) error {
 	if err = os.MkdirAll(destination, 0755); err != nil {
 		return err
 	}
-	fs.SetHidden(destination)
-	defer fs.ClearHidden(destination)
+	commonfs.SetHidden(destination)
+	defer commonfs.ClearHidden(destination)
 
 	for _, f := range r.File {
 		if ctx.Err() != nil {
@@ -93,17 +167,15 @@ func extract7zGo(ctx context.Context, archive, destination string) error {
 			return err
 		}
 	}
-	return nil
+	return validateExtractTree(destination)
 }
 
 func extract7zFile(f *sevenzip.File, destination, relPath string) error {
 	cleanDest := filepath.Clean(destination)
-	targetPath := filepath.Join(cleanDest, relPath)
-	cleanTarget := filepath.Clean(targetPath)
-
-	if cleanTarget != cleanDest && !strings.HasPrefix(cleanTarget, cleanDest+string(os.PathSeparator)) {
-		return fmt.Errorf("invalid archive path: %s", f.Name)
+	if err := validateRelPathUnderRoot(cleanDest, relPath, f.Name); err != nil {
+		return err
 	}
+	cleanTarget := filepath.Clean(filepath.Join(cleanDest, relPath))
 
 	if f.FileInfo().IsDir() {
 		return os.MkdirAll(cleanTarget, 0755)
@@ -156,6 +228,10 @@ func archiveRelativePath(name string) string {
 func extract7z(ctx context.Context, archive, destination string, status *Status) error {
 	status.Extractions++
 	defer func() { status.Extractions-- }()
+
+	if err := validateArchivePaths(archive); err != nil {
+		return fmt.Errorf("archive path validation failed: %w", err)
+	}
 
 	if szExe := find7zExe(); szExe != "" {
 		nativeErr := extract7zNative(ctx, szExe, archive, destination)

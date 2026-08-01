@@ -155,6 +155,12 @@ jobs:
         run: |
           qgo test
 
+      - name: Run go test (cli/src)
+        shell: pwsh
+        working-directory: ${{ matrix.app }}/src
+        run: |
+          go test -p 1 -timeout 3m ./...
+
   no-op:
     name: Fail On No App Changes
     needs: detect

@@ -2,12 +2,11 @@ package bootstrap
 
 import (
 	"common/fs"
+	"common/verifycache"
 	prefs "common/preferences"
 	"common/registry"
 	"fmt"
-	"nvm/link"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -25,6 +24,11 @@ func EnsureUserProfileInitialized() error {
 		return fmt.Errorf("failed to check bootstrap state: %w", err)
 	}
 
+	dataRoot, err := DataRoot()
+	if err != nil {
+		return err
+	}
+
 	shimDir, err := ShimDir()
 	if err != nil {
 		return err
@@ -39,37 +43,15 @@ func EnsureUserProfileInitialized() error {
 	if err != nil {
 		return err
 	}
-	dataRoot, err := DataRoot()
-	if err != nil {
-		return err
-	}
-	fs.HardenRuntimeLayout(installRoot, dataRoot)
 
-	if err := EnsureHiddenDir(shimDir); err != nil {
-		return fmt.Errorf("failed to create shim directory: %w", err)
+	if err := ensureRequiredRuntimeDirs(dataRoot); err != nil {
+		return fmt.Errorf("failed to ensure runtime data directories: %w", err)
 	}
 
-	programShimPath, err := ProgramShimPath()
-	if err != nil {
-		return err
-	}
-
-	if err := syncShimExecutable(programShimPath, filepath.Join(shimDir, "node.exe")); err != nil {
-		return fmt.Errorf("failed to synchronize node shim: %w", err)
-	}
-
-	programProxyPath, err := ProgramProxyPath()
-	if err != nil {
-		return err
-	}
-
-	dataProxyPath, err := DataProxyPath()
-	if err != nil {
-		return err
-	}
-
-	if err := syncSharedExecutable(programProxyPath, dataProxyPath); err != nil {
-		return fmt.Errorf("failed to synchronize shared proxy shim: %w", err)
+	if state.version < currentBootstrapVersion {
+		if err := cleanupLegacyUserPayload(dataRoot); err != nil {
+			return fmt.Errorf("failed to clean legacy per-user payload: %w", err)
+		}
 	}
 
 	programSyncRoot, err := ProgramSyncRoot()
@@ -86,19 +68,8 @@ func EnsureUserProfileInitialized() error {
 		return fmt.Errorf("failed to seed sync assets: %w", err)
 	}
 
-	if state.version < currentBootstrapVersion {
-		dataRoot, err := DataRoot()
-		if err != nil {
-			return err
-		}
-
-		if err := cleanupLegacyUserPayload(dataRoot); err != nil {
-			return fmt.Errorf("failed to clean legacy per-user payload: %w", err)
-		}
-	}
-
-	if err := EnsureHiddenDir(linkDir); err != nil {
-		return fmt.Errorf("failed to create link directory: %w", err)
+	if err := MaintainShimDirectory(); err != nil {
+		return err
 	}
 
 	nodejsPath, err := NodejsPath()
@@ -123,51 +94,45 @@ func EnsureUserProfileInitialized() error {
 		}
 	}
 
+	dataProxyPath, err := DataProxyPath()
+	if err != nil {
+		return err
+	}
+
 	needsRepair, err := profileNeedsRepair(state.version, strings.ToLower(mode), shimDir, linkDir, nodejsPath, dataProxyPath, activeVersion)
 	if err != nil {
 		return err
 	}
+
+	enabled, err := managementEnabled()
+	if err != nil {
+		return fmt.Errorf("failed to read enabled setting: %w", err)
+	}
+	if enabled {
+		if err := ensureActivationLink(strings.ToLower(mode), dataRoot, installRoot, shimDir, activeVersion); err != nil {
+			return err
+		}
+	}
+
 	if !needsRepair {
 		if state.needsMarkerUpgrade() {
 			if err := writeBootstrapVersion(currentBootstrapVersion); err != nil {
 				return fmt.Errorf("failed to update bootstrap version marker: %w", err)
 			}
 		}
-		return nil
-	}
-
-	switch strings.ToLower(mode) {
-	case "shim":
-		if err := link.Link(shimDir, nodejsPath); err != nil {
-			return fmt.Errorf("failed to initialize .nodejs junction: %w", err)
-		}
-	case "link":
-		linkNodePath, err := LinkNodePath()
-		if err != nil {
-			return err
-		}
-
-		if activeVersion != "" {
-			installRoot, err := InstallRoot()
-			if err != nil {
-				return err
-			}
-
-			if err := link.Link(filepath.Join(installRoot, "v"+activeVersion), linkNodePath); err != nil {
-				return fmt.Errorf("failed to initialize link-mode target: %w", err)
-			}
-		}
-
-		if err := link.Link(linkNodePath, nodejsPath); err != nil {
-			return fmt.Errorf("failed to initialize .nodejs junction: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported operating mode %q during profile initialization", mode)
-	}
-
-	if err := writeBootstrapVersion(currentBootstrapVersion); err != nil {
+	} else if err := writeBootstrapVersion(currentBootstrapVersion); err != nil {
 		return fmt.Errorf("failed to write bootstrap version marker: %w", err)
 	}
+
+	if err := verifycache.EnsureVerifyKey(dataRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "nvm: verify cache warning: %v\n", err)
+	}
+
+	if err := hideRuntimeDataDirs(dataRoot); err != nil {
+		return fmt.Errorf("failed to hide runtime data directories: %w", err)
+	}
+
+	fs.HardenRuntimeLayout(installRoot, dataRoot)
 
 	return nil
 }
