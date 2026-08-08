@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,7 +122,10 @@ func TestCleanupCurrentUserAppDataRemovesRoot(t *testing.T) {
 	if err := os.Setenv(localAppDataEnvName, localAppData); err != nil {
 		t.Fatalf("Setenv(%q) error = %v", localAppDataEnvName, err)
 	}
+	oldDelete := deleteScheduledTask
+	deleteScheduledTask = func(string) error { return nil }
 	t.Cleanup(func() {
+		deleteScheduledTask = oldDelete
 		if hadOriginal {
 			_ = os.Setenv(localAppDataEnvName, originalValue)
 			return
@@ -139,6 +143,88 @@ func TestCleanupCurrentUserAppDataRemovesRoot(t *testing.T) {
 	}
 }
 
+func TestCleanupCurrentUserAppDataRemovesSyncScheduledTasks(t *testing.T) {
+	localAppData := t.TempDir()
+	originalValue, hadOriginal := os.LookupEnv(localAppDataEnvName)
+	if err := os.Setenv(localAppDataEnvName, localAppData); err != nil {
+		t.Fatalf("Setenv(%q) error = %v", localAppDataEnvName, err)
+	}
+
+	oldDelete := deleteScheduledTask
+	deleted := make([]string, 0, 2)
+	deleteScheduledTask = func(taskName string) error {
+		deleted = append(deleted, taskName)
+		return nil
+	}
+	t.Cleanup(func() {
+		deleteScheduledTask = oldDelete
+		if hadOriginal {
+			_ = os.Setenv(localAppDataEnvName, originalValue)
+			return
+		}
+		_ = os.Unsetenv(localAppDataEnvName)
+	})
+
+	if err := CleanupCurrentUserAppData(); err != nil {
+		t.Fatalf("CleanupCurrentUserAppData() error = %v", err)
+	}
+
+	if len(deleted) != 2 {
+		t.Fatalf("deleted tasks = %#v, want both sync task names", deleted)
+	}
+	if deleted[0] != "NVM for Windows Sync" || deleted[1] != "NVM Sync" {
+		t.Fatalf("deleted tasks = %#v", deleted)
+	}
+}
+
+func TestRemoveSyncScheduledTasksDeletesKnownTaskNames(t *testing.T) {
+	oldDelete := deleteScheduledTask
+	deleted := make([]string, 0, 2)
+	deleteScheduledTask = func(taskName string) error {
+		deleted = append(deleted, taskName)
+		return nil
+	}
+	t.Cleanup(func() { deleteScheduledTask = oldDelete })
+
+	if err := RemoveSyncScheduledTasks(); err != nil {
+		t.Fatalf("RemoveSyncScheduledTasks() error = %v", err)
+	}
+
+	if got, want := len(deleted), len(syncScheduledTaskNames); got != want {
+		t.Fatalf("deleted count = %d, want %d (%v)", got, want, deleted)
+	}
+	for i, name := range syncScheduledTaskNames {
+		if deleted[i] != name {
+			t.Fatalf("deleted[%d] = %q, want %q", i, deleted[i], name)
+		}
+	}
+}
+
+func TestCleanupCurrentUserAppDataIgnoresMissingSyncScheduledTasks(t *testing.T) {
+	localAppData := t.TempDir()
+	originalValue, hadOriginal := os.LookupEnv(localAppDataEnvName)
+	if err := os.Setenv(localAppDataEnvName, localAppData); err != nil {
+		t.Fatalf("Setenv(%q) error = %v", localAppDataEnvName, err)
+	}
+
+	oldDelete := deleteScheduledTask
+	deleteScheduledTask = func(string) error {
+		return fmt.Errorf("exit status 1: ERROR: The system cannot find the file specified.")
+	}
+	t.Cleanup(func() {
+		deleteScheduledTask = oldDelete
+		if hadOriginal {
+			_ = os.Setenv(localAppDataEnvName, originalValue)
+			return
+		}
+		_ = os.Unsetenv(localAppDataEnvName)
+	})
+
+	if err := CleanupCurrentUserAppData(); err != nil {
+		t.Fatalf("CleanupCurrentUserAppData() error = %v", err)
+	}
+}
+
 func TestCleanupCurrentUserAppDataRemovesNodeWindowsAppsEntries(t *testing.T) {
 	localAppData := t.TempDir()
 
@@ -146,7 +232,10 @@ func TestCleanupCurrentUserAppDataRemovesNodeWindowsAppsEntries(t *testing.T) {
 	if err := os.Setenv(localAppDataEnvName, localAppData); err != nil {
 		t.Fatalf("Setenv(%q) error = %v", localAppDataEnvName, err)
 	}
+	oldDelete := deleteScheduledTask
+	deleteScheduledTask = func(string) error { return nil }
 	t.Cleanup(func() {
+		deleteScheduledTask = oldDelete
 		if hadOriginal {
 			_ = os.Setenv(localAppDataEnvName, originalValue)
 			return

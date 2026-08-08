@@ -2,9 +2,9 @@ package bootstrap
 
 import (
 	"common/fs"
-	"common/verifycache"
 	prefs "common/preferences"
 	"common/registry"
+	"common/verifycache"
 	"fmt"
 	"os"
 	"strings"
@@ -133,6 +133,8 @@ func EnsureUserProfileInitialized() error {
 	}
 
 	fs.HardenRuntimeLayout(installRoot, dataRoot)
+
+	ensureSyncScheduledTask()
 
 	return nil
 }

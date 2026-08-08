@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -20,8 +21,19 @@ var serviceProfileRoots = []string{
 	`\windows\serviceprofiles\networkservice\appdata\local`,
 }
 
+var syncScheduledTaskNames = []string{
+	"NVM for Windows Sync",
+	"NVM Sync",
+}
+
+var deleteScheduledTask = defaultDeleteScheduledTask
+
 func CleanupCurrentUserAppData() error {
 	var cleanupErrors []error
+
+	if err := RemoveSyncScheduledTasks(); err != nil {
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to remove sync scheduled tasks: %w", err))
+	}
 
 	if err := removeAllNodeVersionsWindowsAppsEntries(); err != nil {
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to remove node version Windows Apps entries: %w", err))
@@ -45,6 +57,46 @@ func CleanupCurrentUserAppData() error {
 	}
 
 	return nil
+}
+
+// RemoveSyncScheduledTasks deletes the current-user sync announcement tasks.
+// Used on install/upgrade (stale community or prior certified tasks) and uninstall.
+func RemoveSyncScheduledTasks() error {
+	var deleteErrors []error
+	for _, taskName := range syncScheduledTaskNames {
+		if err := deleteScheduledTask(taskName); err != nil {
+			if isScheduledTaskMissing(err) {
+				continue
+			}
+			deleteErrors = append(deleteErrors, fmt.Errorf("%s: %w", taskName, err))
+		}
+	}
+	if len(deleteErrors) > 0 {
+		return errors.Join(deleteErrors...)
+	}
+	return nil
+}
+
+func defaultDeleteScheduledTask(taskName string) error {
+	output, err := exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, trimmed)
+	}
+	return nil
+}
+
+func isScheduledTaskMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "cannot find the file specified") ||
+		strings.Contains(text, "cannot find the task") ||
+		strings.Contains(text, "the system cannot find the file specified")
 }
 
 func removeAllNodeVersionsWindowsAppsEntries() error {

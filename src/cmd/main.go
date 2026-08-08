@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"common/license"
 	"common/settings"
 	"common/system"
 	"fmt"
@@ -67,6 +68,14 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--remove-sync-tasks":
+		// Invoked by the MSI on install/upgrade so reinstalls drop stale sync tasks
+		// (community or prior certified). First-launch bootstrap recreates the task.
+		if err := installer.RemoveSyncScheduledTasks(); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--unregister-eventlog":
 		// Invoked by OSS uninstaller to support event log unregistration without needing to run the entire CLI uninstaller.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
@@ -106,7 +115,7 @@ func main() {
 	cli := kong.Parse(
 		root,
 		kong.Name(name),
-		kong.Description(fmt.Sprintf("%s\nv%s.", description, version)),
+		kong.Description(fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())),
 		kong.UsageOnError(),
 		kong.Vars{
 			"app":      name,

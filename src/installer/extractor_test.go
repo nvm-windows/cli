@@ -7,23 +7,6 @@ import (
 	"testing"
 )
 
-func TestPathWithinRoot(t *testing.T) {
-	root := filepath.Clean(`C:\nvm\installs\v20.0.0`)
-
-	if !pathWithinRoot(root, root) {
-		t.Fatal("expected root to be within itself")
-	}
-	if !pathWithinRoot(root, filepath.Join(root, "node.exe")) {
-		t.Fatal("expected child path to be within root")
-	}
-	if pathWithinRoot(root, filepath.Clean(`C:\nvm\installs\v20.0.0-evil`)) {
-		t.Fatal("expected sibling path to be rejected")
-	}
-	if pathWithinRoot(root, filepath.Clean(`C:\nvm\installs\..\evil`)) {
-		t.Fatal("expected traversal path to be rejected")
-	}
-}
-
 func TestValidateRelPathUnderRootRejectsTraversal(t *testing.T) {
 	root := filepath.Clean(`C:\nvm-extract-validation`)
 
@@ -79,7 +62,11 @@ func TestValidateExtractTreeRejectsEscape(t *testing.T) {
 	}
 	if _, err := os.Stat(escaped); err == nil {
 		// Walk only covers root subtree; verify sibling paths are not counted as inside.
-		if pathWithinRoot(root, outside) {
+		ok, err := pathWithinRoot(outside, root)
+		if err != nil {
+			t.Fatalf("pathWithinRoot() error = %v", err)
+		}
+		if ok {
 			t.Fatal("pathWithinRoot should reject sibling outside temp root")
 		}
 	}

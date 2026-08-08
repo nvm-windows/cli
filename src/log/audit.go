@@ -35,6 +35,11 @@ func LogSystemChanged(action, nodeVersion, resolvedPath, outcome, detail string,
 		}
 	}
 
+	if strings.EqualFold(outcome, OutcomeFailed) {
+		ErrorStructured("nvm.system.changed", payload)
+		return
+	}
+
 	LogStructured("nvm.system.changed", payload)
 }
 

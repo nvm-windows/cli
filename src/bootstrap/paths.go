@@ -10,7 +10,16 @@ import (
 	"strings"
 )
 
+var (
+	// programRootOverride is test-only. When set, ProgramRoot returns it.
+	programRootOverride string
+)
+
 func ProgramRoot() (string, error) {
+	if programRootOverride != "" {
+		return filepath.Clean(programRootOverride), nil
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve program root: %w", err)
