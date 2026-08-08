@@ -76,6 +76,15 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--seed-announcement-watermarks":
+		// MSI writes HKLM last news/update/sync checks so hourly sync does not
+		// toast historical feed items before the user launches nvm.
+		settings.Load()
+		if err := settings.SeedAnnouncementWatermarksIfEmpty(settings.PutMachine); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--unregister-eventlog":
 		// Invoked by OSS uninstaller to support event log unregistration without needing to run the entire CLI uninstaller.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
@@ -118,11 +127,11 @@ func main() {
 		kong.Description(fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())),
 		kong.UsageOnError(),
 		kong.Vars{
-			"app":      name,
-			"version":  version,
-			"node":     "Node.js",
+			"app":       name,
+			"version":   version,
+			"node":      "Node.js",
 			"buildTime": buildTime,
-			"cfg_opts": strings.Join(settings.ListUserCfg(), ", "),
+			"cfg_opts":  strings.Join(settings.ListUserCfg(), ", "),
 		},
 		kong.HelpOptions{
 			Compact:             true,

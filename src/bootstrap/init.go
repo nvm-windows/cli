@@ -4,6 +4,7 @@ import (
 	"common/fs"
 	prefs "common/preferences"
 	"common/registry"
+	"common/settings"
 	"common/verifycache"
 	"fmt"
 	"os"
@@ -134,6 +135,7 @@ func EnsureUserProfileInitialized() error {
 
 	fs.HardenRuntimeLayout(installRoot, dataRoot)
 
+	_ = settings.SeedAnnouncementWatermarksIfEmpty(settings.Put)
 	ensureSyncScheduledTask()
 
 	return nil

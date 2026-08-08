@@ -1,6 +1,7 @@
 package commands
 
 import (
+	nvmhttp "common/http"
 	"common/inspect"
 	"common/license"
 	"common/registry"
@@ -10,7 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
-	gohttp "net/http"
 	"nvm/bootstrap"
 	"nvm/commands/cache"
 	"nvm/constant"
@@ -33,7 +33,8 @@ var (
 
 const remoteReachabilityTimeout = 1500 * time.Millisecond
 
-var reachabilityClient = &gohttp.Client{Timeout: remoteReachabilityTimeout}
+// Use common/http so Author mirrors (mirror.author.io) get Bearer access token.
+var reachabilityClient = nvmhttp.NewClient(remoteReachabilityTimeout)
 
 type Env struct {
 	constant.FlagJSON
@@ -362,12 +363,12 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 
 	if hasActiveLicense {
 		free := " (free)"
-		if out.ActiveLicense.Plan != "community" {
+		if !strings.EqualFold(out.ActiveLicense.Plan, "community") {
 			free = ""
 		}
 
 		fmt.Fprintf(t, "%s%s License\t: %s%s\n", indent(1), branch, out.ActiveLicense.Plan, free)
-		if out.ActiveLicense.Verification != "" && out.ActiveLicense.Verification != "verified" {
+		if out.ActiveLicense.Verification != "" {
 			fmt.Fprintf(t, "%s%s Verification\t: %s\n", indent(1), branch, out.ActiveLicense.Verification)
 		}
 		fmt.Fprintf(t, "%s%s%s %s Issued\t: %s\n", indent(1), line, indent(1), branch, out.ActiveLicense.Issued)

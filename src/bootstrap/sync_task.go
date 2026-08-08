@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"common/settings"
 	"nvm/log"
 )
 
@@ -18,8 +17,9 @@ var (
 )
 
 // ensureSyncScheduledTask registers the per-user hourly sync task used for
-// news/release announcements. Errors are logged and swallowed so bootstrap
-// never fails solely because Task Scheduler is unavailable.
+// news/release announcements and certified license expiry toasts. Errors are
+// logged and swallowed so bootstrap never fails solely because Task Scheduler
+// is unavailable.
 func ensureSyncScheduledTask() {
 	if err := ensureSyncScheduledTaskErr(); err != nil {
 		log.Warnf("sync scheduled task setup skipped: %v", err)
@@ -53,32 +53,13 @@ func ensureSyncScheduledTaskErr() error {
 		log.Logf("Registered scheduled task %q -> %s --background sync", syncScheduledTaskName, syncExe)
 	}
 
-	disabled, err := announcementsDisabled()
-	if err != nil {
-		return fmt.Errorf("read disable_announcements: %w", err)
-	}
-	if disabled {
-		if err := changeScheduledTask(syncScheduledTaskName, false); err != nil {
-			return fmt.Errorf("disable scheduled task %q: %w", syncScheduledTaskName, err)
-		}
+	// Always leave the task enabled. disable_announcements only skips news/releases
+	// inside sync.exe; license expiry toasts still need the hourly run.
+	if err := changeScheduledTask(syncScheduledTaskName, true); err != nil {
+		return fmt.Errorf("enable scheduled task %q: %w", syncScheduledTaskName, err)
 	}
 
 	return nil
-}
-
-func announcementsDisabled() (bool, error) {
-	value, err := settings.Get("disable_announcements")
-	if err != nil {
-		return false, err
-	}
-	switch v := value.(type) {
-	case bool:
-		return v, nil
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1", nil
-	default:
-		return false, nil
-	}
 }
 
 func defaultScheduledTaskCreate(taskName, syncExe string) error {

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"common/settings"
 )
 
 func TestEnsureSyncScheduledTaskCreatesWhenMissing(t *testing.T) {
@@ -30,12 +28,11 @@ func TestEnsureSyncScheduledTaskCreatesWhenMissing(t *testing.T) {
 		queryScheduledTaskXML = oldQuery
 		createScheduledTask = oldCreate
 		changeScheduledTask = oldChange
-		_ = settings.Del("disable_announcements")
-		settings.Load(true)
 	})
 
 	programRootOverride = tmp
 	created := false
+	enabled := false
 	queryScheduledTaskXML = func(taskName string) (string, error) {
 		if taskName != syncScheduledTaskName {
 			t.Fatalf("query task = %q", taskName)
@@ -52,55 +49,27 @@ func TestEnsureSyncScheduledTaskCreatesWhenMissing(t *testing.T) {
 		}
 		return nil
 	}
-	changeScheduledTask = func(string, bool) error {
-		t.Fatal("changeScheduledTask should not run when announcements enabled")
+	changeScheduledTask = func(taskName string, on bool) error {
+		if taskName != syncScheduledTaskName {
+			t.Fatalf("change task = %q", taskName)
+		}
+		if !on {
+			t.Fatal("expected enable")
+		}
+		enabled = true
 		return nil
 	}
-
-	if err := settings.Put("disable_announcements", false); err != nil {
-		t.Fatalf("Put(disable_announcements): %v", err)
-	}
-	settings.Load(true)
 
 	ensureSyncScheduledTask()
 	if !created {
 		t.Fatal("expected scheduled task creation")
 	}
+	if !enabled {
+		t.Fatal("expected scheduled task enable")
+	}
 }
 
-func TestEnsureSyncScheduledTaskSkipsWhenPresent(t *testing.T) {
-	tmp := t.TempDir()
-	utilsDir := filepath.Join(tmp, "utils")
-	if err := os.MkdirAll(utilsDir, 0o755); err != nil {
-		t.Fatalf("mkdir utils: %v", err)
-	}
-	syncExe := filepath.Join(utilsDir, "sync.exe")
-	if err := os.WriteFile(syncExe, []byte("sync"), 0o644); err != nil {
-		t.Fatalf("write sync.exe: %v", err)
-	}
-
-	oldProgramRoot := programRootOverride
-	oldQuery := queryScheduledTaskXML
-	oldCreate := createScheduledTask
-	t.Cleanup(func() {
-		programRootOverride = oldProgramRoot
-		queryScheduledTaskXML = oldQuery
-		createScheduledTask = oldCreate
-	})
-
-	programRootOverride = tmp
-	queryScheduledTaskXML = func(string) (string, error) {
-		return `<Task><Actions><Exec><Command>` + syncExe + `</Command></Exec></Actions></Task>`, nil
-	}
-	createScheduledTask = func(string, string) error {
-		t.Fatal("createScheduledTask should not run when task already points at sync.exe")
-		return nil
-	}
-
-	ensureSyncScheduledTask()
-}
-
-func TestEnsureSyncScheduledTaskDisablesWhenAnnouncementsOff(t *testing.T) {
+func TestEnsureSyncScheduledTaskSkipsCreateWhenPresent(t *testing.T) {
 	tmp := t.TempDir()
 	utilsDir := filepath.Join(tmp, "utils")
 	if err := os.MkdirAll(utilsDir, 0o755); err != nil {
@@ -120,35 +89,76 @@ func TestEnsureSyncScheduledTaskDisablesWhenAnnouncementsOff(t *testing.T) {
 		queryScheduledTaskXML = oldQuery
 		createScheduledTask = oldCreate
 		changeScheduledTask = oldChange
-		_ = settings.Del("disable_announcements")
-		settings.Load(true)
 	})
 
 	programRootOverride = tmp
-	disabled := false
+	enabled := false
+	queryScheduledTaskXML = func(string) (string, error) {
+		return `<Task><Actions><Exec><Command>` + syncExe + `</Command></Exec></Actions></Task>`, nil
+	}
+	createScheduledTask = func(string, string) error {
+		t.Fatal("createScheduledTask should not run when task already points at sync.exe")
+		return nil
+	}
+	changeScheduledTask = func(taskName string, on bool) error {
+		if taskName != syncScheduledTaskName {
+			t.Fatalf("change task = %q", taskName)
+		}
+		if !on {
+			t.Fatal("expected enable")
+		}
+		enabled = true
+		return nil
+	}
+
+	ensureSyncScheduledTask()
+	if !enabled {
+		t.Fatal("expected scheduled task enable even when already present")
+	}
+}
+
+func TestEnsureSyncScheduledTaskStaysEnabledWhenAnnouncementsOff(t *testing.T) {
+	tmp := t.TempDir()
+	utilsDir := filepath.Join(tmp, "utils")
+	if err := os.MkdirAll(utilsDir, 0o755); err != nil {
+		t.Fatalf("mkdir utils: %v", err)
+	}
+	syncExe := filepath.Join(utilsDir, "sync.exe")
+	if err := os.WriteFile(syncExe, []byte("sync"), 0o644); err != nil {
+		t.Fatalf("write sync.exe: %v", err)
+	}
+
+	oldProgramRoot := programRootOverride
+	oldQuery := queryScheduledTaskXML
+	oldCreate := createScheduledTask
+	oldChange := changeScheduledTask
+	t.Cleanup(func() {
+		programRootOverride = oldProgramRoot
+		queryScheduledTaskXML = oldQuery
+		createScheduledTask = oldCreate
+		changeScheduledTask = oldChange
+	})
+
+	programRootOverride = tmp
+	enabled := false
 	queryScheduledTaskXML = func(string) (string, error) {
 		return "", errors.New("cannot find the task")
 	}
 	createScheduledTask = func(string, string) error { return nil }
-	changeScheduledTask = func(taskName string, enabled bool) error {
+	changeScheduledTask = func(taskName string, on bool) error {
 		if taskName != syncScheduledTaskName {
 			t.Fatalf("change task = %q", taskName)
 		}
-		if enabled {
-			t.Fatal("expected disable")
+		if !on {
+			t.Fatal("license expiry notices require task stay enabled")
 		}
-		disabled = true
+		enabled = true
 		return nil
 	}
 
-	if err := settings.Put("disable_announcements", true); err != nil {
-		t.Fatalf("Put(disable_announcements): %v", err)
-	}
-	settings.Load(true)
-
 	ensureSyncScheduledTask()
-	if !disabled {
-		t.Fatal("expected scheduled task to be disabled")
+	if !enabled {
+		t.Fatal("expected scheduled task to stay enabled")
 	}
 }
 

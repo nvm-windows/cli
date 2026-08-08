@@ -10,7 +10,6 @@ import (
 	"nvm/log"
 	"nvm/mode"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -154,40 +153,10 @@ func displayValue(name string, value interface{}) string {
 }
 
 func setAnnouncements(enabled bool) error {
-	taskNames := []string{"NVM for Windows Sync", "NVM Sync"}
-	action := "/Disable"
-	if enabled {
-		action = "/Enable"
-	}
-
-	applied := 0
-	cmdErrors := make([]string, 0, len(taskNames))
-	for _, taskName := range taskNames {
-		cmd := exec.Command("schtasks", "/Change", "/TN", taskName, action)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			msg := strings.TrimSpace(string(output))
-			if msg == "" {
-				msg = err.Error()
-			}
-			cmdErrors = append(cmdErrors, fmt.Sprintf("%s: %s", taskName, msg))
-			continue
-		}
-		applied++
-	}
-
-	if applied == 0 {
-		return fmt.Errorf("unable to update sync scheduled task state (%s): %s", action, strings.Join(cmdErrors, " | "))
-	}
-
 	if enabled {
 		log.Log("Project and release announcements have been enabled.")
 	} else {
-		log.Warn("Project and release announcements have been disabled. To re-enable, run 'nvm config set disable_announcements=false'.")
-	}
-
-	if applied > 1 {
-		log.Log("Updated multiple sync scheduled task names for compatibility.")
+		log.Warn("Project and release announcements have been disabled. License expiry warnings still run via the sync scheduled task. To re-enable announcements, run 'nvm config set disable_announcements=false'.")
 	}
 	return nil
 }
