@@ -40,6 +40,8 @@ replace common/mirrorauth v1.0.0 => ../../common/mirrorauth
 
 replace common/token v1.0.0 => ../../common/token
 
+replace common/cose v1.0.0 => ../../common/cose
+
 replace common/license v1.0.0 => ../../common/licensing
 
 require (
@@ -65,10 +67,11 @@ require (
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/iancoleman/orderedmap v0.3.0
 	github.com/ncruces/zenity v0.10.14
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.42.0
 )
 
 require (
+	common/cose v1.0.0 // indirect
 	common/proxy v1.0.0 // indirect
 	common/token v1.0.0 // indirect
 	common/urlguard v1.0.0 // indirect
@@ -77,57 +80,19 @@ require (
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/dchest/jsmin v0.0.0-20220218165748-59f39799265f // indirect
+	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/ldclabs/cose v1.3.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/randall77/makefat v0.0.0-20210315173500-7ddd0e42c844 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
+	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/image v0.20.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
