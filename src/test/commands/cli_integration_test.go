@@ -87,7 +87,7 @@ func TestCLIEnvText(t *testing.T) {
 	if !strings.Contains(stdout, installRoot) && !strings.Contains(stdout, strings.ReplaceAll(installRoot, "/", `\`)) {
 		t.Fatalf("Execute(env) stdout missing install root %q", sb.InstallRoot)
 	}
-	for _, want := range []string{"Operating Mode", "Version Management", "shim", "22.0.0"} {
+	for _, want := range []string{"Operating Mode", "Version Management", "Node.js", "Enforce permission model", "shim", "22.0.0"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("Execute(env) stdout = %q, want substring %q", stdout, want)
 		}
@@ -113,6 +113,13 @@ func TestCLIEnvJSON(t *testing.T) {
 			ActiveVersion string `json:"version_active"`
 			Status        string `json:"status"`
 		} `json:"operations"`
+		Node struct {
+			EnforcePermissionModel        bool   `json:"enforce_permission_model"`
+			FreezeV8GlobalObjects         bool   `json:"freeze_v8_global_objects"`
+			DisableEvalAndStringExecution bool   `json:"disable_eval_and_string_execution"`
+			Enforced                      bool   `json:"enforced"`
+			EnforcementNote               string `json:"enforcement_note"`
+		} `json:"node"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &out); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v stdout = %q", err, stdout)
@@ -125,6 +132,12 @@ func TestCLIEnvJSON(t *testing.T) {
 	}
 	if out.Operations.Status != "on" {
 		t.Fatalf("operations.status = %q, want on", out.Operations.Status)
+	}
+	if !out.Node.Enforced {
+		t.Fatalf("node.enforced = false, want true in shim mode")
+	}
+	if out.Node.EnforcementNote != "" {
+		t.Fatalf("node.enforcement_note = %q, want empty in shim mode", out.Node.EnforcementNote)
 	}
 
 	wantRoot := strings.ToLower(filepath.ToSlash(sb.InstallRoot))

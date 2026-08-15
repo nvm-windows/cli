@@ -68,6 +68,15 @@ type vmOps struct {
 	CachedVersionsSizeMB  int64           `json:"cache_size_mb"`
 }
 
+// nodeRuntimeFlags reports shim-enforced Node.js CLI security flags.
+type nodeRuntimeFlags struct {
+	EnforcePermissionModel        bool   `json:"enforce_permission_model"`
+	FreezeV8GlobalObjects         bool   `json:"freeze_v8_global_objects"`
+	DisableEvalAndStringExecution bool   `json:"disable_eval_and_string_execution"`
+	Enforced                      bool   `json:"enforced"`
+	EnforcementNote               string `json:"enforcement_note,omitempty"`
+}
+
 type Computer struct {
 	MajorLabel      string   `json:"windows_major_label"`
 	MajorVersion    int64    `json:"windows_major_version"`
@@ -88,12 +97,13 @@ type Computer struct {
 }
 
 type data struct {
-	Installation      installData `json:"installation"`
-	VersionManagement vmOps       `json:"operations"`
-	Computer          Computer    `json:"localhost"`
-	ActiveLicense     *License    `json:"license,omitempty"`
-	ReportStatus      string      `json:"report_status,omitempty"`
-	Help              string      `json:"help_url,omitempty"`
+	Installation      installData       `json:"installation"`
+	VersionManagement vmOps             `json:"operations"`
+	Node              nodeRuntimeFlags  `json:"node"`
+	Computer          Computer          `json:"localhost"`
+	ActiveLicense     *License          `json:"license,omitempty"`
+	ReportStatus      string            `json:"report_status,omitempty"`
+	Help              string            `json:"help_url,omitempty"`
 }
 
 type License struct {
@@ -245,6 +255,16 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		}
 	}
 
+	nodeFlags := nodeRuntimeFlags{
+		EnforcePermissionModel:        cfg.EnforcePermissionModel,
+		FreezeV8GlobalObjects:         cfg.FreezeV8GlobalObjects,
+		DisableEvalAndStringExecution: cfg.DisableEvalAndStringExecution,
+		Enforced:                      strings.EqualFold(strings.TrimSpace(cfg.Mode), "shim"),
+	}
+	if !nodeFlags.Enforced {
+		nodeFlags.EnforcementNote = "Only enforced in shim mode"
+	}
+
 	out := data{
 		Installation: installData{
 			Version:    vars["version"],
@@ -274,6 +294,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			NpmGlobalModuleUnique: moduleUniqueCount,
 			NpmModuleSizeMB:       moduleSizeBytes / (1024 * 1024),
 		},
+		Node: nodeFlags,
 		Computer: Computer{
 			MajorLabel:     win_major_label,
 			MajorVersion:   int64(win_major_version.(uint64)),
@@ -455,6 +476,19 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	fmt.Fprintf(t, "%s%s Total Size\t: %s\n", indent(7, " "), branch, formatSize(cachedRuntimeSizeBytes))
 	fmt.Fprintf(t, "%s%s Path\t: %s\n", indent(7, " "), end, out.VersionManagement.VersionsCacheRoot)
 
+	fmt.Fprint(t, br)
+
+	// Node.js runtime security flags (shim-enforced)
+	fmt.Fprint(t, "Node.js\t\n")
+	fmt.Fprintf(t, "%s%s Enforce permission model\t: %s\n", indent(1), branch, enabledLabel(out.Node.EnforcePermissionModel))
+	fmt.Fprintf(t, "%s%s Freeze V8 global objects\t: %s\n", indent(1), branch, enabledLabel(out.Node.FreezeV8GlobalObjects))
+	if out.Node.EnforcementNote != "" {
+		fmt.Fprintf(t, "%s%s Disallow eval/string execution\t: %s\n", indent(1), branch, enabledLabel(out.Node.DisableEvalAndStringExecution))
+		fmt.Fprintf(t, "%s%s Note\t: %s\n", indent(1), end, out.Node.EnforcementNote)
+	} else {
+		fmt.Fprintf(t, "%s%s Disallow eval/string execution\t: %s\n", indent(1), end, enabledLabel(out.Node.DisableEvalAndStringExecution))
+	}
+
 	// Identify EOL versions and those w%shich are supported by nvm
 
 	// Announcements
@@ -470,6 +504,13 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	// Identify potentially invalid node versions (missing node.exe, missing npm)
 
 	return nil
+}
+
+func enabledLabel(enabled bool) string {
+	if enabled {
+		return "Enabled"
+	}
+	return "Disabled"
 }
 
 func showDetail(t *tabwriter.Writer, problem *inspect.Problem) {
