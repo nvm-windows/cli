@@ -1,11 +1,13 @@
 package bootstrap
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	winreg "golang.org/x/sys/windows/registry"
 )
@@ -24,8 +26,23 @@ var (
 )
 
 func cleanupLegacyUserPayload(dataRoot string) error {
+	programRoot, err := ProgramRoot()
+	if err != nil {
+		return fmt.Errorf("failed to resolve program root: %w", err)
+	}
+
 	legacyNvmExe := filepath.Join(dataRoot, "nvm.exe")
 	legacySyncExe := filepath.Join(dataRoot, "utils", "sync.exe")
+
+	// Per-user/community installs live under the data root. Never treat that live
+	// payload as leftover "legacy" files — deleting nvm.exe would Access-Deny the
+	// running binary and break bootstrap.
+	if sameLegacyPath(programRoot, dataRoot) {
+		if err := removeLegacyCurrentUserEnv(dataRoot); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	if err := removeLegacyCurrentUserEnv(dataRoot); err != nil {
 		return err
@@ -98,10 +115,34 @@ func removeLegacyPath(path string) error {
 	}
 
 	if err := os.RemoveAll(path); err != nil {
+		if isBusyLegacyPathError(err) {
+			fmt.Fprintf(os.Stderr, "nvm: warning: skipped locked legacy path %s: %v\n", path, err)
+			return nil
+		}
 		return fmt.Errorf("failed to remove legacy path %s: %w", path, err)
 	}
 
 	return nil
+}
+
+func isBusyLegacyPathError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.ERROR_ACCESS_DENIED) {
+		return true
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == syscall.ERROR_ACCESS_DENIED {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "access is denied")
+}
+
+func sameLegacyPath(a, b string) bool {
+	left := normalizePathMatch(a)
+	right := normalizePathMatch(b)
+	return left != "" && left == right
 }
 
 func removeLegacyUninstallEntries(dataRoot string) error {
