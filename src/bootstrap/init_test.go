@@ -7,6 +7,7 @@ import (
 	"common/registry"
 	"common/settings"
 	"errors"
+	"fmt"
 	"nvm/link"
 	"os"
 	"os/exec"
@@ -387,6 +388,77 @@ func TestEnsureUserProfileInitializedCleansLegacyPayload(t *testing.T) {
 		t.Fatalf("deleted tasks = %#v, want [\"NVM Sync\"]", deletedTasks)
 	}
 	assertBootstrapVersion(t, currentBootstrapVersion)
+}
+
+func TestCleanupLegacyUserPayloadSkipsLivePerUserInstall(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "installs")
+	resetBootstrapState(t)
+	overrideLegacyMigrationTargets(t)
+
+	oldProgramRoot := programRootOverride
+	programRootOverride = root
+	t.Cleanup(func() { programRootOverride = oldProgramRoot })
+
+	if err := settings.Put("root", installRoot); err != nil {
+		t.Fatalf("Put(root) error = %v", err)
+	}
+
+	liveNvmExe := filepath.Join(root, "nvm.exe")
+	liveSyncExe := filepath.Join(root, "utils", "sync.exe")
+	if err := os.MkdirAll(filepath.Dir(liveSyncExe), 0755); err != nil {
+		t.Fatalf("MkdirAll(liveSyncExe) error = %v", err)
+	}
+	if err := os.WriteFile(liveNvmExe, []byte("live-nvm"), 0644); err != nil {
+		t.Fatalf("WriteFile(liveNvmExe) error = %v", err)
+	}
+	if err := os.WriteFile(liveSyncExe, []byte("live-sync"), 0644); err != nil {
+		t.Fatalf("WriteFile(liveSyncExe) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".icons"), 0755); err != nil {
+		t.Fatalf("MkdirAll(.icons) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".icons", "nvm.ico"), []byte("icon"), 0644); err != nil {
+		t.Fatalf("WriteFile(icon) error = %v", err)
+	}
+
+	deletedTasks := 0
+	queryScheduledTaskXML = func(taskName string) (string, error) {
+		return "<Exec><Command>" + liveSyncExe + "</Command></Exec>", nil
+	}
+	deleteScheduledTask = func(taskName string) error {
+		deletedTasks++
+		return nil
+	}
+
+	createRegistryKey(t, legacyUserUninstallKeyPaths[0], map[string]string{
+		"InstallLocation": root,
+	})
+	createRegistryKey(t, `Environment`, map[string]string{
+		"NVM_HOME": root,
+	})
+
+	if err := cleanupLegacyUserPayload(root); err != nil {
+		t.Fatalf("cleanupLegacyUserPayload() error = %v", err)
+	}
+
+	assertPathExists(t, liveNvmExe)
+	assertPathExists(t, liveSyncExe)
+	assertPathExists(t, filepath.Join(root, ".icons", "nvm.ico"))
+	assertRegistryValueMissing(t, `Environment`, "NVM_HOME")
+	if _, err := winreg.OpenKey(winreg.CURRENT_USER, legacyUserUninstallKeyPaths[0], winreg.QUERY_VALUE); err != nil {
+		t.Fatalf("live uninstall key should remain, OpenKey error = %v", err)
+	}
+	if deletedTasks != 0 {
+		t.Fatalf("deletedTasks = %d, want 0 for live per-user install", deletedTasks)
+	}
+}
+
+func TestRemoveLegacyPathSkipsAccessDenied(t *testing.T) {
+	err := fmt.Errorf("unlinkat C:\\x\\nvm.exe: Access is denied.")
+	if !isBusyLegacyPathError(err) {
+		t.Fatalf("isBusyLegacyPathError(%v) = false, want true", err)
+	}
 }
 
 func TestSyncShimExecutableCopiesMissingTarget(t *testing.T) {
