@@ -40,6 +40,24 @@ func getStringSetting(name string) (string, error) {
 	return text, nil
 }
 
+func formatNotInstalledVersion(resolved string) string {
+	display := resolver.NormalizeVersion(resolved)
+	if strings.Count(display, ".") >= 3 {
+		parts := strings.Split(display, ".")
+		if len(parts) > 3 {
+			return strings.Replace(display, "v", "", 1)
+		}
+	}
+	dots := strings.Count(display, ".")
+	switch dots {
+	case 0:
+		display += ".x.x"
+	case 1:
+		display += ".x"
+	}
+	return strings.TrimPrefix(display, "v")
+}
+
 func (s *Version) Run() error {
 	requestedVersion := s.Version[0]
 	cfg := settings.Global()
@@ -48,15 +66,7 @@ func (s *Version) Run() error {
 	if s.Local {
 		matched, ok := resolver.LatestInstalledMatch(requestedVersion)
 		if !ok {
-			dots := strings.Count(resolver.NormalizeVersion(requestedVersion), ".")
-			displayVersion := resolver.NormalizeVersion(requestedVersion)
-			switch dots {
-			case 0:
-				displayVersion = displayVersion + ".x.x"
-			case 1:
-				displayVersion = displayVersion + ".x"
-			}
-			return fmt.Errorf("v%s is not installed", displayVersion)
+			return fmt.Errorf("v%s is not installed", formatNotInstalledVersion(requestedVersion))
 		}
 		requestedVersion = matched
 	}
@@ -124,18 +134,11 @@ func (s *Version) Run() error {
 				return err
 			}
 		} else {
-			dots := strings.Count(s.Version[0], ".")
-			displayVersion := s.Version[0]
-			switch dots {
-			case 0:
-				displayVersion = s.Version[0] + ".x.x"
-			case 1:
-				displayVersion = s.Version[0] + ".x"
-			case 3:
-				return fmt.Errorf("v%s is not a valid version (UnsupportedVersionSpec)", strings.Replace(s.Version[0], "v", "", 1))
+			if strings.Count(resolver.NormalizeVersion(version), ".") >= 3 &&
+				len(strings.Split(resolver.NormalizeVersion(version), ".")) > 3 {
+				return fmt.Errorf("v%s is not a valid version (UnsupportedVersionSpec)", formatNotInstalledVersion(version))
 			}
-
-			return fmt.Errorf("v%s is not installed", strings.Replace(displayVersion, "v", "", 1))
+			return fmt.Errorf("v%s is not installed", formatNotInstalledVersion(version))
 		}
 	}
 
