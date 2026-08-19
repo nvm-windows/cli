@@ -405,7 +405,7 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 	for _, installDir := range installDirs {
 		npmVersion, _ := installedNpmVersion(installDir)
 		_ = verifycache.ClearNodeCache(filepath.Join(installDir, "node.exe"))
-		if err := os.RemoveAll(installDir); err != nil {
+		if err := cleanupInstallDir(installDir); err != nil {
 			log.Errorf("Failed to uninstall Node.js v%s: %v", node_version, err)
 			fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", node_version, err)
 			log.LogSystemChanged("uninstall", node_version, installDir, log.OutcomeFailed, err.Error())
