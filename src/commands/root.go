@@ -17,7 +17,8 @@ type RootCommand struct {
 	InstallTypos install.Root  `cmd:"" aliases:"add,in,ins,inst,insta,instal,isnt,isnta,isntal,isntall" hidden:"true"`
 	Uninstall    Uninstall     `cmd:"uninstall" aliases:"rm,un" help:"Uninstall one or more ${node} versions."`
 	Use          use.Root      `cmd:"use" help:"Switch the default ${node} version."`
-	RC           RunCommand    `cmd:"rc" help:"(Re)create run command file (ex: .nvmrc)."`
+	Rtconfig      RunCommand `cmd:"rtconfig" aliases:"rc" help:"(Re)create run command file (ex: .nvmrc)."`
+	RtconfigTypos RunCommand `cmd:"" aliases:"rtc,rt-config,rtcfg,rt-cfg" hidden:"true"`
 	List         list.Root     `cmd:"list" aliases:"ls" help:"List the installed/available ${node} versions."`
 	ListRemote   list.Releases `cmd:"list-remote" aliases:"ls-remote" hidden:"true"`
 	Alias        alias.Root    `cmd:"alias" help:"Manage ${node} version aliases."`

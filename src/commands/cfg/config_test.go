@@ -494,3 +494,80 @@ func TestList_RunPrintsJSONWhenEnabled(t *testing.T) {
 		t.Fatalf("expected access_token to be hidden in JSON output, got %#v", data["access_token"])
 	}
 }
+
+func TestResetAll_RunResetsCustomValues(t *testing.T) {
+	bindTestRegistry(t)
+	root := filepath.Join(os.TempDir(), "nvm_config_reset_all_root")
+	defer os.RemoveAll(root)
+
+	if err := runSetCfg(t, "root="+root, "auto_install=1", "cache_downloads=1"); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	output, err := captureStdout(t, func() error {
+		cfgRegistryMu.Lock()
+		applyActiveTestRegistry()
+		runErr := (&ResetAll{}).Run()
+		settings.Load(true)
+		cfgRegistryMu.Unlock()
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("ResetAll.Run() error = %v", err)
+	}
+	if !strings.Contains(output, "Reset ") {
+		t.Fatalf("ResetAll output = %q, want reset summary", output)
+	}
+	if got := getSetting(t, "root"); got != root {
+		t.Fatalf("root = %v, want preserved custom root %q", got, root)
+	}
+	if got := getSetting(t, "auto_install"); got != false {
+		t.Fatalf("auto_install = %v, want default false", got)
+	}
+	if got := getSetting(t, "cache_downloads"); got != false {
+		t.Fatalf("cache_downloads = %v, want default false", got)
+	}
+}
+
+func TestResetAll_PreservesRoot(t *testing.T) {
+	bindTestRegistry(t)
+	root := filepath.Join(os.TempDir(), "nvm_config_reset_all_preserve_root")
+	defer os.RemoveAll(root)
+
+	if err := runSetCfg(t, "root="+root, "auto_use=0"); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	if err := (&ResetAll{}).Run(); err != nil {
+		t.Fatalf("ResetAll.Run() error = %v", err)
+	}
+	if got := getSetting(t, "root"); got != root {
+		t.Fatalf("root = %v, want %q", got, root)
+	}
+}
+
+func TestResetAll_SkipsBlockedKeys(t *testing.T) {
+	bindTestRegistry(t)
+	root := filepath.Join(os.TempDir(), "nvm_config_reset_all_blocked")
+	defer os.RemoveAll(root)
+
+	if err := runSetCfg(t, "root="+root); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if err := settings.Put("active_version", "22.0.0"); err != nil {
+		t.Fatalf("seed active_version: %v", err)
+	}
+	if err := settings.Put("access_token", "header.payload.signature"); err != nil {
+		t.Fatalf("seed access_token: %v", err)
+	}
+
+	if err := (&ResetAll{}).Run(); err != nil {
+		t.Fatalf("ResetAll.Run() error = %v", err)
+	}
+	if got := getSetting(t, "active_version"); got != "22.0.0" {
+		t.Fatalf("active_version = %v, want preserved 22.0.0", got)
+	}
+	if got := getSetting(t, "access_token"); got != "header.payload.signature" {
+		t.Fatalf("access_token changed after reset all: %v", got)
+	}
+}

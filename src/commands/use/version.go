@@ -58,6 +58,15 @@ func formatNotInstalledVersion(resolved string) string {
 	return strings.TrimPrefix(display, "v")
 }
 
+func notInstalledUseError(version, mode string, autoInstallDisabled bool) error {
+	display := formatNotInstalledVersion(version)
+	msg := fmt.Sprintf("v%s is not installed", display)
+	if mode == "shim" && autoInstallDisabled {
+		msg += "\nEnable auto-install with: nvm config set auto_install=true"
+	}
+	return fmt.Errorf("%s", msg)
+}
+
 func (s *Version) Run() error {
 	requestedVersion := s.Version[0]
 	cfg := settings.Global()
@@ -138,7 +147,11 @@ func (s *Version) Run() error {
 				len(strings.Split(resolver.NormalizeVersion(version), ".")) > 3 {
 				return fmt.Errorf("v%s is not a valid version (UnsupportedVersionSpec)", formatNotInstalledVersion(version))
 			}
-			return fmt.Errorf("v%s is not installed", formatNotInstalledVersion(version))
+			mode, modeErr := getStringSetting("mode")
+			if modeErr != nil {
+				return modeErr
+			}
+			return notInstalledUseError(version, mode, !cfg.AutoInstall && !s.NoInstall)
 		}
 	}
 

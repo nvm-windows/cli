@@ -22,6 +22,18 @@ func invalidateCachedNodeArchive(archivePath string) {
 	removeLegacyCacheDigestSidecar(archivePath)
 }
 
+func purgeVersionDownloadCache(nodeVersion, cacheDir string) bool {
+	cacheFile := versionDownloadCachePath(nodeVersion, cacheDir)
+	if cacheFile == "" {
+		return false
+	}
+	if _, err := os.Stat(cacheFile); err != nil {
+		return false
+	}
+	invalidateCachedNodeArchive(cacheFile)
+	return true
+}
+
 func removeLegacyCacheDigestSidecar(archivePath string) {
 	_ = os.Remove(archivePath + legacyCacheDigestSuffix)
 }

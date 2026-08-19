@@ -11,7 +11,6 @@ import (
 	"nvm/prompt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -442,20 +441,17 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 		return
 	}
 
-	if cfg.ClearCache && cfg.CacheDir != "" {
-		cpuarch := runtime.GOARCH
-		if cpuarch == "amd64" {
-			cpuarch = "x64"
-		}
-		archiveName := fmt.Sprintf("node-v%s-win-%s.7z", node_version, cpuarch)
-		cacheFile := filepath.Join(cfg.CacheDir, archiveName)
-		if _, err := os.Stat(cacheFile); err == nil {
-			invalidateCachedNodeArchive(cacheFile)
-		}
-	}
-
 	record(fmt.Sprintf("Uninstalled Node.js v%s\n", node_version))
 	log.Logf("Uninstalled Node.js v%s", node_version)
+	if cfg.ClearCache && cfg.CacheDir != "" {
+		if purgeVersionDownloadCache(node_version, cfg.CacheDir) {
+			record(fmt.Sprintf("Purged cached artifact for v%s\n", node_version))
+			log.Logf("Purged cached artifact for v%s", node_version)
+		} else {
+			record(fmt.Sprintf("v%s was not in cache; nothing removed from cache\n", node_version))
+			log.Logf("v%s was not in cache; nothing removed from cache", node_version)
+		}
+	}
 	if len(installDirs) == 0 && removedRegistryEntry {
 		log.LogSystemChanged("uninstall", node_version, "", log.OutcomeSucceeded, "removed registry entry only")
 	}

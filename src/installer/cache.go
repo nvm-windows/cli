@@ -6,8 +6,8 @@ import (
 	"runtime"
 )
 
-func cacheArchivePath(version string, cfg InstallConfig) string {
-	if cfg.NoCache || cfg.CacheDir == "" {
+func versionDownloadCachePath(version, cacheDir string) string {
+	if cacheDir == "" {
 		return ""
 	}
 
@@ -16,5 +16,12 @@ func cacheArchivePath(version string, cfg InstallConfig) string {
 		cpuarch = "x64"
 	}
 	archiveName := fmt.Sprintf("node-v%s-win-%s.7z", version, cpuarch)
-	return filepath.Join(cfg.CacheDir, archiveName)
+	return filepath.Join(cacheDir, archiveName)
+}
+
+func cacheArchivePath(version string, cfg InstallConfig) string {
+	if cfg.NoCache || cfg.CacheDir == "" {
+		return ""
+	}
+	return versionDownloadCachePath(version, cfg.CacheDir)
 }

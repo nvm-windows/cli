@@ -10,6 +10,19 @@ import (
 	"nvm/test/clitest"
 )
 
+func TestCLICacheDefaultsToView(t *testing.T) {
+	sb := clitest.NewSandbox(t)
+	archiveName := filepath.Base(sb.SeedCacheArchive("22.0.0"))
+
+	stdout, stderr, err := sb.Execute("cache")
+	if err != nil {
+		t.Fatalf("Execute(cache) error = %v stderr = %q", err, stderr)
+	}
+	if !strings.Contains(stdout, archiveName) {
+		t.Fatalf("Execute(cache) stdout = %q, want seeded archive %q", stdout, archiveName)
+	}
+}
+
 func TestCLICacheViewListsSeededArchive(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	archiveName := filepath.Base(sb.SeedCacheArchive("22.0.0"))

@@ -3,6 +3,7 @@ package use
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	prefs "common/preferences"
@@ -17,6 +18,40 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	exec.Command("reg", "delete", `HKCU\Software\NVMTest`, "/f").Run() //nolint:errcheck
 	os.Exit(code)
+}
+
+func TestNotInstalledUseErrorIncludesAutoInstallHintInShimMode(t *testing.T) {
+	err := notInstalledUseError("22.0.0", "shim", true)
+	if err == nil {
+		t.Fatal("notInstalledUseError() = nil, want error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "v22.0.0 is not installed") {
+		t.Fatalf("error = %q, want not installed message", msg)
+	}
+	if !strings.Contains(msg, "nvm config set auto_install=true") {
+		t.Fatalf("error = %q, want auto-install hint", msg)
+	}
+}
+
+func TestNotInstalledUseErrorOmitsAutoInstallHintInLinkMode(t *testing.T) {
+	err := notInstalledUseError("22.0.0", "link", true)
+	if err == nil {
+		t.Fatal("notInstalledUseError() = nil, want error")
+	}
+	if strings.Contains(err.Error(), "auto_install") {
+		t.Fatalf("error = %q, want no auto-install hint in link mode", err.Error())
+	}
+}
+
+func TestNotInstalledUseErrorOmitsAutoInstallHintWhenEnabled(t *testing.T) {
+	err := notInstalledUseError("22.0.0", "shim", false)
+	if err == nil {
+		t.Fatal("notInstalledUseError() = nil, want error")
+	}
+	if strings.Contains(err.Error(), "auto_install") {
+		t.Fatalf("error = %q, want no auto-install hint when auto-install enabled", err.Error())
+	}
 }
 
 func TestGetStringSettingReturnsEmptyForMissingValue(t *testing.T) {

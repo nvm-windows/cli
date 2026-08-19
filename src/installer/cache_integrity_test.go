@@ -13,6 +13,24 @@ import (
 	"common/verifycache"
 )
 
+func TestPurgeVersionDownloadCache(t *testing.T) {
+	cacheDir := t.TempDir()
+	cacheFile := versionDownloadCachePath("22.0.0", cacheDir)
+	if err := os.WriteFile(cacheFile, []byte("cached archive"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if !purgeVersionDownloadCache("22.0.0", cacheDir) {
+		t.Fatal("purgeVersionDownloadCache() = false, want true when archive exists")
+	}
+	if _, err := os.Stat(cacheFile); !os.IsNotExist(err) {
+		t.Fatalf("cache file still exists after purge: %v", err)
+	}
+	if purgeVersionDownloadCache("22.0.0", cacheDir) {
+		t.Fatal("purgeVersionDownloadCache() = true, want false when archive missing")
+	}
+}
+
 func TestVerifyCachedNodeArchiveIntegrityUsesTPMEntry(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "node-v22.0.0-win-x64.7z")
 	if err := os.WriteFile(archivePath, []byte("cached archive"), 0o644); err != nil {

@@ -14,27 +14,31 @@ type Del struct {
 }
 
 func (d *Del) Run() error {
-	if d.Name == "root" {
-		var cmd Set
-		if value, err := settings.DefaultValue("root"); err == nil {
-			cmd.Pairs = []string{fmt.Sprintf(`root="%s"`, value)}
+	return resetSetting(d.Name, true)
+}
 
-			return cmd.Run()
-		} else {
+func resetSetting(name string, showResult bool) error {
+	if name == "root" {
+		var cmd Set
+		value, err := settings.DefaultValue("root")
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
+			return err
 		}
+		cmd.Pairs = []string{fmt.Sprintf(`root="%s"`, value)}
+		return cmd.Run()
 	}
 
 	auditMessage := ""
 	oldValue := ""
-	if currentValue, err := settings.Get(d.Name); err == nil {
-		oldValue = displayValue(d.Name, currentValue)
-		if msg, ok := settings.DeletionAuditMessage(d.Name, currentValue); ok {
+	if currentValue, err := settings.Get(name); err == nil {
+		oldValue = displayValue(name, currentValue)
+		if msg, ok := settings.DeletionAuditMessage(name, currentValue); ok {
 			auditMessage = msg
 		}
 	}
 
-	if err := settings.Del(d.Name); err != nil {
+	if err := settings.Del(name); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return err
 	}
@@ -45,7 +49,7 @@ func (d *Del) Run() error {
 
 	payload := log.StructuredPayload{
 		"Action":        "Modified",
-		"Configuration": d.Name,
+		"Configuration": name,
 		"Value":         "(default)",
 		"User":          log.Actor(),
 	}
@@ -54,9 +58,12 @@ func (d *Del) Run() error {
 	}
 	log.LogStructured("nvm.configuration.changed", payload)
 
-	if !settings.HasChangeAudit(d.Name) {
-		log.Logf("%s configuration option reset to default", d.Name)
+	if !settings.HasChangeAudit(name) {
+		log.Logf("%s configuration option reset to default", name)
 	}
 
-	return utility.DisplaySetting(d.Name, "successfully reset %s to %s\n")
+	if showResult {
+		return utility.DisplaySetting(name, "successfully reset %s to %s\n")
+	}
+	return nil
 }

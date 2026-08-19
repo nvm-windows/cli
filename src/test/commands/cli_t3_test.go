@@ -72,6 +72,33 @@ func TestCLIInstallLocalOnlyMissingArchive(t *testing.T) {
 	}
 }
 
+func TestCLIRTConfigCommandParses(t *testing.T) {
+	sb := clitest.NewSandbox(t)
+
+	_, stderr, err := sb.Execute("rtconfig")
+	if err == nil {
+		t.Fatal("Execute(rtconfig) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no version specified") {
+		t.Fatalf("Execute(rtconfig) error = %v stderr = %q, want missing version error", err, stderr)
+	}
+}
+
+func TestCLIRTConfigHiddenAliasParses(t *testing.T) {
+	sb := clitest.NewSandbox(t)
+
+	_, stderr, err := sb.Execute("rtcfg")
+	if err == nil {
+		t.Fatal("Execute(rtcfg) expected error, got nil")
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "unknown command") {
+		t.Fatalf("Execute(rtcfg) error = %v, hidden alias should resolve to rtconfig", err)
+	}
+	if !strings.Contains(err.Error(), "no version specified") {
+		t.Fatalf("Execute(rtcfg) error = %v stderr = %q, want missing version error", err, stderr)
+	}
+}
+
 func TestCLIRCRequiresVersion(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 

@@ -271,3 +271,16 @@ func TestCLIConfigListRouting(t *testing.T) {
 		t.Fatalf("Execute(config list) output = stdout:%q stderr:%q, want config keys", stdout, stderr)
 	}
 }
+
+func TestCLIConfigResetAllRouting(t *testing.T) {
+	sb := clitest.NewSandbox(t)
+
+	stdout, stderr, err := sb.Execute("config", "reset", "all")
+	if err != nil {
+		t.Fatalf("Execute(config reset all) error = %v stderr = %q", err, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(combined, "Reset ") && !strings.Contains(combined, "No configuration options were reset") {
+		t.Fatalf("Execute(config reset all) output = %q, want reset summary", combined)
+	}
+}
