@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 )
 
-type View struct {
+type List struct {
 	Name []string `arg:"name" optional:"" help:"Filter by cache name."`
 	constant.FlagJSON
 }
@@ -22,7 +22,7 @@ type cacheJSON struct {
 	Files      []string `json:"files"`
 }
 
-func (c *View) Run() error {
+func (c *List) Run() error {
 	caches := Store.List()
 
 	// Build sorted name order so output is deterministic.

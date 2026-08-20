@@ -2,7 +2,7 @@ package cache
 
 type Root struct {
 	Add    Add    `cmd:"add" help:"Add artifacts directly to the cache."`
-	View   View   `cmd:"view" aliases:"ls" default:"withargs" help:"View cached assets. This is run if no subcommand is specified (e.g. nvm cache)."`
+	List   List   `cmd:"list" aliases:"ls" default:"withargs" help:"List cached assets. This is run if no subcommand is specified (e.g. nvm cache)."`
 	Remove Remove `cmd:"remove" aliases:"rm" help:"Remove cached assets."`
 }
 

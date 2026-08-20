@@ -10,7 +10,7 @@ import (
 	"nvm/test/clitest"
 )
 
-func TestCLICacheDefaultsToView(t *testing.T) {
+func TestCLICacheDefaultsToList(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	archiveName := filepath.Base(sb.SeedCacheArchive("22.0.0"))
 
@@ -23,26 +23,26 @@ func TestCLICacheDefaultsToView(t *testing.T) {
 	}
 }
 
-func TestCLICacheViewListsSeededArchive(t *testing.T) {
+func TestCLICacheListListsSeededArchive(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	archiveName := filepath.Base(sb.SeedCacheArchive("22.0.0"))
 
-	stdout, stderr, err := sb.Execute("cache", "view", "versions")
+	stdout, stderr, err := sb.Execute("cache", "list", "versions")
 	if err != nil {
-		t.Fatalf("Execute(cache view versions) error = %v stderr = %q", err, stderr)
+		t.Fatalf("Execute(cache list versions) error = %v stderr = %q", err, stderr)
 	}
 	if !strings.Contains(stdout, archiveName) {
-		t.Fatalf("Execute(cache view versions) stdout = %q, want %q", stdout, archiveName)
+		t.Fatalf("Execute(cache list versions) stdout = %q, want %q", stdout, archiveName)
 	}
 }
 
-func TestCLICacheViewJSON(t *testing.T) {
+func TestCLICacheListJSON(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	sb.SeedCacheArchive("22.0.0")
 
-	stdout, stderr, err := sb.Execute("cache", "view", "--json")
+	stdout, stderr, err := sb.Execute("cache", "list", "--json")
 	if err != nil {
-		t.Fatalf("Execute(cache view --json) error = %v stderr = %q", err, stderr)
+		t.Fatalf("Execute(cache list --json) error = %v stderr = %q", err, stderr)
 	}
 
 	var out map[string]struct {
@@ -53,7 +53,7 @@ func TestCLICacheViewJSON(t *testing.T) {
 	}
 	versions, ok := out["versions"]
 	if !ok || versions.TotalFiles < 1 {
-		t.Fatalf("cache view JSON = %+v, want versions.total_files >= 1", out)
+		t.Fatalf("cache list JSON = %+v, want versions.total_files >= 1", out)
 	}
 }
 

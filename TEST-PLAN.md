@@ -209,7 +209,7 @@ Check off in order. One PR per phase where possible.
 
 ### Phase T4 — Cache & list-remote (P1)
 
-- [x] `cache view` / `cache remove` with seeded files
+- [x] `cache list` / `cache remove` with seeded files
 - [x] `list releases` with HTTP test server serving static `index.tab` fixture
 
 ### Phase T5 — Sync-adjacent & smoke (P3)
