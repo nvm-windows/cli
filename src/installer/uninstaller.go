@@ -23,6 +23,9 @@ type UninstallConfig struct {
 	Versions   []string
 	ClearCache bool
 	CacheDir   string
+	// FromApps is set when Windows Apps / ARP QuietUninstallString invokes uninstall.
+	// Forces non-interactive behavior and prefers ARP InstallLocation when resolving dirs.
+	FromApps bool
 }
 
 func Uninstall(cfg UninstallConfig) error {
@@ -41,6 +44,9 @@ func Uninstall(cfg UninstallConfig) error {
 	if len(cfg.Versions) == 1 {
 		spec := strings.TrimSpace(cfg.Versions[0])
 		if spec == "*" || strings.EqualFold(spec, "all") {
+			if cfg.FromApps {
+				return fmt.Errorf("windows Apps uninstall does not support removing all versions")
+			}
 			confirmed, err := prompt.Confirm("WARNING: This will remove all versions of Node.js from your system. This action is irreversible. Continue?", "n")
 			if err != nil {
 				return err
@@ -90,19 +96,27 @@ func Uninstall(cfg UninstallConfig) error {
 	wg.Wait()
 
 	if failures.Load() > 0 {
-		return fmt.Errorf("%d version(s) failed to uninstall", failures.Load())
+		err := fmt.Errorf("%d version(s) failed to uninstall", failures.Load())
+		if cfg.FromApps {
+			log.Error(err)
+		}
+		return err
 	}
 
 	if len(dedupe) == 0 && skipped.Load() > 0 {
 		return nil
 	}
 
-	if len(notifyMsgs) > 0 && !system.IsAppInForeground() {
+	// Apps launches with no console — always toast so the user gets feedback.
+	if len(notifyMsgs) > 0 && (cfg.FromApps || !system.IsAppInForeground()) {
 		go notify.Send(settings.AppId, "", strings.Join(notifyMsgs, "; "))
 	}
 
-	return reshim()
+	return runReshim()
 }
+
+// runReshim is swapped in tests to avoid requiring a real reshim.exe.
+var runReshim = reshim
 
 func prepareActiveForUninstall(targetSet map[string]struct{}, record func(string)) error {
 	cfg := settings.Global()
@@ -375,12 +389,18 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 	if node_version == "" {
 		resolvedVersion, _, err := resolver.Find(version)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", version, err)
-			log.LogSystemChanged("uninstall", version, "", log.OutcomeFailed, err.Error())
-			failures.Add(1)
-			return
+			// Apps uninstall can still proceed from ARP InstallLocation without mirror resolution.
+			if cfg.FromApps && lookupARPInstallLocation(version) != "" {
+				node_version = normalizeVersionSpec(version)
+			} else {
+				fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", version, err)
+				log.LogSystemChanged("uninstall", version, "", log.OutcomeFailed, err.Error())
+				failures.Add(1)
+				return
+			}
+		} else {
+			node_version = normalizeVersionSpec(resolvedVersion)
 		}
-		node_version = normalizeVersionSpec(resolvedVersion)
 	}
 
 	matchSpecs := []string{normalizeVersionSpec(version), normalizeVersionSpec(node_version)}
@@ -394,6 +414,16 @@ func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, f
 		legacy := getRoot(node_version)
 		if _, err := os.Stat(legacy); err == nil {
 			installDirs = append(installDirs, legacy)
+		}
+	}
+	// Windows Apps may run with a stale/empty Root preference; ARP InstallLocation is authoritative.
+	if cfg.FromApps {
+		for _, candidate := range []string{node_version, version} {
+			if loc := lookupARPInstallLocation(candidate); loc != "" {
+				if _, err := os.Stat(loc); err == nil {
+					installDirs = appendUniqueInstallDir(installDirs, loc)
+				}
+			}
 		}
 	}
 	if uninstallDebugEnabled() {
@@ -593,6 +623,82 @@ func normalizeInstallPath(path string) string {
 
 	cleaned := filepath.Clean(trimmed)
 	return strings.ToLower(cleaned)
+}
+
+func appendUniqueInstallDir(dirs []string, dir string) []string {
+	normalized := normalizeInstallPath(dir)
+	if normalized == "" {
+		return dirs
+	}
+	for _, existing := range dirs {
+		if normalizeInstallPath(existing) == normalized {
+			return dirs
+		}
+	}
+	return append(dirs, dir)
+}
+
+// lookupARPInstallLocation returns InstallLocation from the per-version Windows Apps ARP entry.
+func lookupARPInstallLocation(version string) string {
+	target := normalizeVersionSpec(version)
+	if target == "" {
+		return ""
+	}
+
+	keyPath := registryKeyName(target)
+	key, err := registry.OpenKey(registry.CURRENT_USER, keyPath, registry.QUERY_VALUE)
+	if err != nil {
+		// Older entries may use a slightly different DisplayVersion spelling; scan managed keys.
+		return lookupARPInstallLocationScan(target)
+	}
+	defer key.Close()
+
+	loc, _, err := key.GetStringValue("InstallLocation")
+	if err != nil || strings.TrimSpace(loc) == "" {
+		return lookupARPInstallLocationScan(target)
+	}
+	return filepath.Clean(loc)
+}
+
+func lookupARPInstallLocationScan(targetVersion string) string {
+	const uninstallRootPath = `Software\Microsoft\Windows\CurrentVersion\Uninstall`
+	const keyPrefix = "nvm4w-node-v"
+
+	root, err := registry.OpenKey(registry.CURRENT_USER, uninstallRootPath, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+
+	subKeys, err := root.ReadSubKeyNames(-1)
+	if err != nil {
+		return ""
+	}
+
+	for _, subKeyName := range subKeys {
+		if !strings.HasPrefix(strings.ToLower(subKeyName), keyPrefix) {
+			continue
+		}
+		fullPath := uninstallRootPath + `\` + subKeyName
+		entryKey, err := registry.OpenKey(registry.CURRENT_USER, fullPath, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		displayVersion, _, _ := entryKey.GetStringValue("DisplayVersion")
+		installLocation, _, _ := entryKey.GetStringValue("InstallLocation")
+		entryKey.Close()
+
+		nameVersion := normalizeVersionSpec(strings.TrimPrefix(subKeyName, "nvm4w-node-v"))
+		displayVersionNorm := normalizeVersionSpec(displayVersion)
+		if nameVersion != targetVersion && displayVersionNorm != targetVersion {
+			continue
+		}
+		if strings.TrimSpace(installLocation) == "" {
+			continue
+		}
+		return filepath.Clean(installLocation)
+	}
+	return ""
 }
 
 func updateSystemVersions() {

@@ -580,7 +580,7 @@ func registryKeyName(version string) string {
 }
 
 func registerNodeVersion(version, installDir, publisher string) {
-	nvmExe, err := os.Executable()
+	nvmExe, err := nvmExecutablePath()
 	if err != nil {
 		return
 	}
@@ -599,8 +599,10 @@ func registerNodeVersion(version, installDir, publisher string) {
 		publisher = nodePublisher(filepath.Join(installDir, "node.exe"))
 	}
 
+	uninstallCmd := appsUninstallCommand(nvmExe, version)
 	key.SetStringValue("DisplayName", displayName+" via nvm-windows")
-	key.SetStringValue("UninstallString", fmt.Sprintf(`"%s" uninstall %s`, nvmExe, version))
+	key.SetStringValue("UninstallString", uninstallCmd)
+	key.SetStringValue("QuietUninstallString", uninstallCmd)
 	key.SetStringValue("DisplayVersion", version)
 	key.SetStringValue("Publisher", publisher)
 	key.SetStringValue("Comments", "Installed and managed by nvm-windows")
@@ -609,6 +611,27 @@ func registerNodeVersion(version, installDir, publisher string) {
 	key.SetStringValue("InstallLocation", installDir)
 	key.SetDWordValue("NoModify", 1)
 	key.SetDWordValue("NoRepair", 1)
+}
+
+// appsUninstallCommand is the ARP UninstallString / QuietUninstallString Windows Apps runs.
+// --from-apps keeps the path non-interactive (no console prompts) when Settings hides the window.
+func appsUninstallCommand(nvmExe, version string) string {
+	return fmt.Sprintf(`"%s" uninstall %s --from-apps`, nvmExe, version)
+}
+
+func nvmExecutablePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	abs, err := filepath.Abs(exe)
+	if err != nil {
+		return filepath.Clean(exe), nil
+	}
+	return filepath.Clean(abs), nil
 }
 
 func installedNpmVersion(installDir string) (string, bool) {

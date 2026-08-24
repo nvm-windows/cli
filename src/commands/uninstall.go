@@ -7,8 +7,9 @@ import (
 )
 
 type Uninstall struct {
-	Purge  bool `flag:"purge" help:"Purge the cache of this version (if cached)."`
-	Notify bool `flag:"notify" hidden:"true" help:"Quietly notify user when a version has been automatically installed."`
+	Purge    bool `flag:"purge" help:"Purge the cache of this version (if cached)."`
+	FromApps bool `flag:"from-apps" hidden:"true" help:"Non-interactive uninstall for Windows Apps / ARP QuietUninstallString."`
+	Notify   bool `flag:"notify" hidden:"true" help:"Quietly notify user when a version has been automatically installed."`
 	constant.ArgVersion
 }
 
@@ -17,5 +18,6 @@ func (s *Uninstall) Run() error {
 		Versions:   s.Version,
 		ClearCache: s.Purge,
 		CacheDir:   cache.Store.Versions,
+		FromApps:   s.FromApps,
 	})
 }

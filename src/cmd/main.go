@@ -109,7 +109,7 @@ func main() {
 		root = &commands.RootWithVersion
 	}
 
-	if system.IsProcessStartedByExplorer() {
+	if system.IsProcessStartedByExplorer() && !argsContainFromApps(os.Args) {
 		fmt.Printf("%s v%s should be run from a shell/terminal.\nPress 'Enter' to exit...\n", name, version)
 		bufio.NewReader(os.Stdin).ReadBytes('\n')
 		return
@@ -119,6 +119,12 @@ func main() {
 	if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
 		fmt.Fprint(os.Stderr, err.Error())
 		os.Exit(1)
+	}
+
+	// Refresh Windows Apps uninstall strings (QuietUninstallString / --from-apps) for existing installs.
+	// Skip during Apps-driven uninstall so we don't rewrite ARP mid-removal.
+	if !argsContainFromApps(os.Args) {
+		_ = installer.RegisterInstalledVersions()
 	}
 
 	cli := kong.Parse(
@@ -175,6 +181,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+}
+
+func argsContainFromApps(args []string) bool {
+	for _, arg := range args {
+		if arg == "--from-apps" {
+			return true
+		}
+	}
+	return false
 }
 
 func capitalize(s string) string {
