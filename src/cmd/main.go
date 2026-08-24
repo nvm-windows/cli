@@ -117,7 +117,7 @@ func main() {
 
 	settings.Load()
 	if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
-		fmt.Fprint(os.Stderr, err.Error())
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 

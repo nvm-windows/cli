@@ -185,6 +185,11 @@ func install(
 
 	if !cfg.Force && !cfg.CacheOnly {
 		if info, err := os.Stat(txn.installDir); err == nil && info.IsDir() {
+			if trustErr := fs.CheckVersionDirTrust(txn.installDir); trustErr != nil {
+				status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
+				log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, trustErr.Error())
+				return
+			}
 			status.Alert(fmt.Errorf("SKIPPED: v%s is already installed", nodeVersion), false)
 			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSkipped, "already installed")
 			return
@@ -209,6 +214,14 @@ func install(
 	}
 
 	if !cfg.CacheOnly {
+		if trustErr := fs.CheckVersionDirTrust(txn.installDir); trustErr != nil {
+			if txn.installBackup != "" {
+				_ = restoreInstallBackup(txn)
+			}
+			status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, trustErr.Error())
+			return
+		}
 		if err := os.MkdirAll(txn.installDir, 0755); err != nil {
 			if txn.installBackup != "" {
 				_ = restoreInstallBackup(txn)

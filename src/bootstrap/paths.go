@@ -258,7 +258,12 @@ func syncShimExecutable(sourcePath, targetPath string) error {
 	}
 
 	if err := fs.ReplaceExecutable(tempPath, targetPath); err != nil {
-		return fmt.Errorf("failed to install target shim: %w", err)
+		// Existing target may still have Auth Users RX-only from a prior locked
+		// directory inherit; grant a write window and retry once.
+		_ = fs.UnlockProxyExecutable(targetPath)
+		if retryErr := fs.ReplaceExecutable(tempPath, targetPath); retryErr != nil {
+			return fmt.Errorf("failed to install target shim: %w", retryErr)
+		}
 	}
 
 	return nil
@@ -362,7 +367,10 @@ func syncSharedExecutableReplace(sourcePath, targetPath string, sourceInfo os.Fi
 	}
 
 	if err := fs.ReplaceExecutable(tempPath, targetPath); err != nil {
-		return fmt.Errorf("failed to install target executable: %w", err)
+		_ = fs.UnlockProxyExecutable(targetPath)
+		if retryErr := fs.ReplaceExecutable(tempPath, targetPath); retryErr != nil {
+			return fmt.Errorf("failed to install target executable: %w", retryErr)
+		}
 	}
 
 	return nil

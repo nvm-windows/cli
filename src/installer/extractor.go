@@ -152,6 +152,9 @@ func extract7zGo(ctx context.Context, archive, destination string) error {
 	if err = os.MkdirAll(destination, 0755); err != nil {
 		return err
 	}
+	if err = commonfs.AssertNoReparseBetween(destination, destination); err != nil {
+		return err
+	}
 	commonfs.SetHidden(destination)
 	defer commonfs.ClearHidden(destination)
 
@@ -178,10 +181,17 @@ func extract7zFile(f *sevenzip.File, destination, relPath string) error {
 	cleanTarget := filepath.Clean(filepath.Join(cleanDest, relPath))
 
 	if f.FileInfo().IsDir() {
+		if err := commonfs.AssertNoReparseBetween(cleanDest, cleanTarget); err != nil {
+			return err
+		}
 		return os.MkdirAll(cleanTarget, 0755)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cleanTarget), 0755); err != nil {
+	parent := filepath.Dir(cleanTarget)
+	if err := commonfs.AssertNoReparseBetween(cleanDest, parent); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
 

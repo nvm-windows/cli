@@ -46,12 +46,12 @@ func EnsureUserProfileInitialized() error {
 	}
 
 	if err := ensureRequiredRuntimeDirs(dataRoot); err != nil {
-		return fmt.Errorf("failed to ensure runtime data directories: %w", err)
+		fmt.Fprintf(os.Stderr, "nvm: warning: runtime dirs skipped: %v\n", err)
 	}
 
 	if state.version < currentBootstrapVersion {
 		if err := cleanupLegacyUserPayload(dataRoot); err != nil {
-			return fmt.Errorf("failed to clean legacy per-user payload: %w", err)
+			fmt.Fprintf(os.Stderr, "nvm: warning: legacy cleanup skipped: %v\n", err)
 		}
 	}
 
@@ -66,11 +66,13 @@ func EnsureUserProfileInitialized() error {
 	}
 
 	if err := seedDirectoryContents(programSyncRoot, dataSyncRoot); err != nil {
-		return fmt.Errorf("failed to seed sync assets: %w", err)
+		fmt.Fprintf(os.Stderr, "nvm: warning: sync asset seed skipped: %v\n", err)
 	}
 
 	if err := MaintainShimDirectory(); err != nil {
-		return err
+		// Shim ACL/replace can fail for medium-IL admins after an elevated lock.
+		// Do not brick every command (help/env/list); warn and continue.
+		fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
 	}
 
 	nodejsPath, err := NodejsPath()
@@ -102,7 +104,8 @@ func EnsureUserProfileInitialized() error {
 
 	needsRepair, err := profileNeedsRepair(state.version, strings.ToLower(mode), shimDir, linkDir, nodejsPath, dataProxyPath, activeVersion)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "nvm: warning: profile repair check skipped: %v\n", err)
+		needsRepair = true
 	}
 
 	enabled, err := managementEnabled()
@@ -111,18 +114,18 @@ func EnsureUserProfileInitialized() error {
 	}
 	if enabled {
 		if err := ensureActivationLink(strings.ToLower(mode), dataRoot, installRoot, shimDir, activeVersion); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "nvm: warning: activation link repair skipped: %v\n", err)
 		}
 	}
 
 	if !needsRepair {
 		if state.needsMarkerUpgrade() {
 			if err := writeBootstrapVersion(currentBootstrapVersion); err != nil {
-				return fmt.Errorf("failed to update bootstrap version marker: %w", err)
+				fmt.Fprintf(os.Stderr, "nvm: warning: bootstrap marker skipped: %v\n", err)
 			}
 		}
 	} else if err := writeBootstrapVersion(currentBootstrapVersion); err != nil {
-		return fmt.Errorf("failed to write bootstrap version marker: %w", err)
+		fmt.Fprintf(os.Stderr, "nvm: warning: bootstrap marker skipped: %v\n", err)
 	}
 
 	if err := verifycache.EnsureVerifyKey(dataRoot); err != nil {
@@ -130,7 +133,7 @@ func EnsureUserProfileInitialized() error {
 	}
 
 	if err := hideRuntimeDataDirs(dataRoot); err != nil {
-		return fmt.Errorf("failed to hide runtime data directories: %w", err)
+		fmt.Fprintf(os.Stderr, "nvm: warning: hide runtime dirs skipped: %v\n", err)
 	}
 
 	fs.HardenRuntimeLayout(installRoot, dataRoot)
