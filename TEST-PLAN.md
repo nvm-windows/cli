@@ -127,7 +127,7 @@ Priority = implement order. **P0** first wave.
 | `install` | local-only / fixture .7z | integration | P2 | fixture archive |
 | `uninstall` | | unit | P1 | SeedVersion |
 | `cache` | view, remove | unit | P1 | seed `.cache` files |
-| `rtconfig` | | unit | P2 | temp project dir |
+| `pin` | | unit | P2 | temp project dir |
 | `reshim` | | unit | P1 | existing reshim test env |
 | `doctor` / `debug` | | integration | P3 | stub sync.exe |
 | `upgrade` / `subscribe` | | P3 | stub sync |
@@ -233,7 +233,7 @@ Check off in order. One PR per phase where possible.
 | `testdata/releases-index.json` | `list releases` offline |
 | `testdata/shasums.txt` | install verify + local SHASUM airgap tests (Track 4) |
 | `testdata/node-minimal.7z` | optional local install (small, license-safe) |
-| `testdata/project/.nvmrc` | `rtconfig` command |
+| `testdata/project/.nvmrc` | `pin` command |
 
 Keep large binaries out of git until needed; document generation script if `.7z` added.
 

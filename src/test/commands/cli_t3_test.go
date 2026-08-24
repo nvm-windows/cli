@@ -72,62 +72,35 @@ func TestCLIInstallLocalOnlyMissingArchive(t *testing.T) {
 	}
 }
 
-func TestCLIRTConfigCommandParses(t *testing.T) {
+func TestCLIPinRequiresVersion(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 
-	_, stderr, err := sb.Execute("rtconfig")
+	_, stderr, err := sb.Execute("pin")
 	if err == nil {
-		t.Fatal("Execute(rtconfig) expected error, got nil")
+		t.Fatal("Execute(pin) expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "no version specified") {
-		t.Fatalf("Execute(rtconfig) error = %v stderr = %q, want missing version error", err, stderr)
+		t.Fatalf("Execute(pin) error = %v stderr = %q, want missing version error", err, stderr)
 	}
 }
 
-func TestCLIRTConfigHiddenAliasParses(t *testing.T) {
-	sb := clitest.NewSandbox(t)
-
-	_, stderr, err := sb.Execute("rtcfg")
-	if err == nil {
-		t.Fatal("Execute(rtcfg) expected error, got nil")
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "unknown command") {
-		t.Fatalf("Execute(rtcfg) error = %v, hidden alias should resolve to rtconfig", err)
-	}
-	if !strings.Contains(err.Error(), "no version specified") {
-		t.Fatalf("Execute(rtcfg) error = %v stderr = %q, want missing version error", err, stderr)
-	}
-}
-
-func TestCLIRCRequiresVersion(t *testing.T) {
-	sb := clitest.NewSandbox(t)
-
-	_, stderr, err := sb.Execute("rc")
-	if err == nil {
-		t.Fatal("Execute(rc) expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "no version specified") {
-		t.Fatalf("Execute(rc) error = %v stderr = %q, want missing version error", err, stderr)
-	}
-}
-
-func TestCLIRCRejectsUnrecognizedFile(t *testing.T) {
+func TestCLIPinRejectsUnrecognizedFile(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	sb.SeedVersion("22.0.0", nil)
 	if err := sb.WriteSetting("active_version", "22.0.0"); err != nil {
 		t.Fatalf("WriteSetting(active_version) error = %v", err)
 	}
 
-	_, stderr, err := sb.Execute("rc", "--file", "custom.json")
+	_, stderr, err := sb.Execute("pin", "--file", "custom.json")
 	if err == nil {
-		t.Fatal("Execute(rc --file custom.json) expected error, got nil")
+		t.Fatal("Execute(pin --file custom.json) expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "would not be recognized") {
-		t.Fatalf("Execute(rc --file custom.json) error = %v stderr = %q", err, stderr)
+		t.Fatalf("Execute(pin --file custom.json) error = %v stderr = %q", err, stderr)
 	}
 }
 
-func TestCLIRCWritesNvmrc(t *testing.T) {
+func TestCLIPinWritesNvmrc(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 	sb.ApplyNodeMirrorFixture(t, clitest.TestdataPath(t, "index.tab"))
 	sb.SeedVersion("22.0.0", nil)
@@ -135,9 +108,9 @@ func TestCLIRCWritesNvmrc(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Chdir(projectDir)
 
-	_, stderr, err := sb.Execute("rc", "22.0.0")
+	_, stderr, err := sb.Execute("pin", "22.0.0")
 	if err != nil {
-		t.Fatalf("Execute(rc 22.0.0) error = %v stderr = %q", err, stderr)
+		t.Fatalf("Execute(pin 22.0.0) error = %v stderr = %q", err, stderr)
 	}
 
 	data, readErr := os.ReadFile(filepath.Join(projectDir, ".nvmrc"))
