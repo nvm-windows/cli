@@ -2,10 +2,10 @@ package bootstrap
 
 import (
 	"common/fs"
-	"common/verifycache"
 	prefs "common/preferences"
 	"common/registry"
 	"common/settings"
+	"common/verifycache"
 	"errors"
 	"fmt"
 	"nvm/link"
@@ -74,6 +74,7 @@ func TestEnsureUserProfileInitializedCreatesLinkModeLayout(t *testing.T) {
 	installRoot := filepath.Join(root, "installs")
 	versionDir := filepath.Join(installRoot, "v22.0.0")
 	resetBootstrapState(t)
+	stubActivationVerification(t)
 
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		t.Fatalf("MkdirAll(versionDir) error = %v", err)
@@ -183,6 +184,7 @@ func TestEnsureUserProfileInitializedRepairsMissingLinkArtifactsAfterMarkerSet(t
 	installRoot := filepath.Join(root, "installs")
 	versionDir := filepath.Join(installRoot, "v22.0.0")
 	resetBootstrapState(t)
+	stubActivationVerification(t)
 
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		t.Fatalf("MkdirAll(versionDir) error = %v", err)
@@ -588,6 +590,13 @@ func resetBootstrapState(t *testing.T) {
 	if err := registry.Del(legacyInitializationMarkerPath()); err != nil {
 		t.Fatalf("Del(legacy initialization marker) error = %v", err)
 	}
+}
+
+func stubActivationVerification(t *testing.T) {
+	t.Helper()
+	originalVerify := verifyActivationNode
+	verifyActivationNode = func(string) error { return nil }
+	t.Cleanup(func() { verifyActivationNode = originalVerify })
 }
 
 func assertBootstrapVersion(t *testing.T, want uint32) {

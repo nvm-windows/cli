@@ -136,7 +136,9 @@ func EnsureUserProfileInitialized() error {
 		fmt.Fprintf(os.Stderr, "nvm: warning: hide runtime dirs skipped: %v\n", err)
 	}
 
-	fs.HardenRuntimeLayout(installRoot, dataRoot)
+	if err := fs.HardenRuntimeLayout(installRoot, dataRoot); err != nil {
+		return fmt.Errorf("runtime ACL hardening failed: %w", err)
+	}
 
 	_ = settings.SeedAnnouncementWatermarksIfEmpty(settings.Put)
 	ensureSyncScheduledTask()

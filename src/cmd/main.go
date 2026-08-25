@@ -6,6 +6,7 @@ import (
 	"common/license"
 	"common/settings"
 	"common/system"
+	"common/verifycache"
 	"fmt"
 	"nvm/bootstrap"
 	"nvm/commands"
@@ -56,6 +57,19 @@ func main() {
 		// versions are registered in Windows Apps the same way normal installs are.
 		settings.Load()
 		if err := installer.RegisterInstalledVersions(); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	case "--sign-version-scripts":
+		// Invoked by detached reshim after global package installs so proxy
+		// can trust newly written .cmd/.bat launchers without executing them first.
+		if len(os.Args) < 3 {
+			fmt.Fprint(os.Stderr, "missing version directory for --sign-version-scripts\n")
+			os.Exit(1)
+		}
+		settings.Load()
+		if err := verifycache.SignVersionScripts(os.Args[2]); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
 		}

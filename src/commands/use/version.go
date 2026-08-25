@@ -199,7 +199,11 @@ func (s *Version) Run() error {
 			}
 		}
 
-		if err := link.Link(filepath.Join(source, "v"+version), filepath.Join(base, ".link/nodejs")); err != nil {
+		versionDir := filepath.Join(source, "v"+version)
+		if err := bootstrap.ValidateVersionActivation(versionDir); err != nil {
+			return err
+		}
+		if err := link.Link(versionDir, filepath.Join(base, ".link/nodejs")); err != nil {
 			// Don't log to event log here because the link method does this
 			// automatically (with more specific detail)
 			return err
@@ -223,8 +227,12 @@ func (s *Version) Run() error {
 			return err
 		}
 	} else if source, err := getStringSetting("root"); err == nil {
-		if err := verifycache.SignNodeCache(filepath.Join(source, "v"+version, "node.exe")); err != nil {
+		versionDir := filepath.Join(source, "v"+version)
+		if err := verifycache.SignNodeCache(filepath.Join(versionDir, "node.exe")); err != nil {
 			log.Logf("verify cache warning: %v", err)
+		}
+		if err := verifycache.SignVersionScripts(versionDir); err != nil {
+			log.Logf("script trust warning: %v", err)
 		}
 	}
 

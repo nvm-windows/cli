@@ -543,8 +543,13 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	if err := verifycache.SignNodeCache(filepath.Join(installDir, "node.exe")); err != nil {
 		log.Logf("verify cache warning for v%s: %v", version, err)
 	}
+	if err := verifycache.SignVersionScripts(installDir); err != nil {
+		log.Logf("script trust warning for v%s: %v", version, err)
+	}
 
-	_ = fs.HardenManagedDirectory(installDir)
+	if err := fs.HardenManagedDirectory(installDir); err != nil {
+		return fmt.Errorf("unable to harden version directory for v%s: %w", version, err)
+	}
 	registerNodeVersion(version, installDir, publisher)
 	if txn != nil && !txn.installed {
 		txn.installedNew = true
