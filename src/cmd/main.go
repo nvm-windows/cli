@@ -132,15 +132,6 @@ func main() {
 
 	settings.Load()
 
-	// Help must stay near-instant. Full bootstrap (reshim, ACL harden,
-	// scheduled task, Windows Apps re-register) is for mutating commands.
-	if !metaHelp {
-		if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
-	}
-
 	cli := kong.Parse(
 		root,
 		kong.Name(name),
@@ -190,10 +181,37 @@ func main() {
 		}),
 	)
 
+	// Bootstrap/hardening only after Kong accepts a real command.
+	// Help (--help / bare nvm / `help`) and parse failures exit inside Parse
+	// and never reach here — so they skip reshim/ACL/schtasks entirely.
+	if commandNeedsBootstrap(cli.Command()) {
+		if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	if err := cli.Run(); err != nil {
 		// Print error without Kong's "nvm: error: " prefix
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
+	}
+}
+
+func commandNeedsBootstrap(commandPath string) bool {
+	cmd := strings.ToLower(strings.TrimSpace(commandPath))
+	if cmd == "" || cmd == "help" {
+		return false
+	}
+	// First path segment only (e.g. "install <version>" → "install").
+	if i := strings.IndexByte(cmd, ' '); i >= 0 {
+		cmd = cmd[:i]
+	}
+	switch cmd {
+	case "help":
+		return false
+	default:
+		return true
 	}
 }
 
