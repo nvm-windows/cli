@@ -110,7 +110,7 @@ func main() {
 		fmt.Printf("v%s\n", version)
 		return
 	case "-h", "--help", "help":
-		// Handled by kong
+		// Handled by kong after lightweight init (no shim/reshim/ARP).
 	default:
 		if strings.HasPrefix(os.Args[1], "-") {
 			fmt.Printf("Unknown flag: %s\n", os.Args[1])
@@ -119,7 +119,8 @@ func main() {
 	}
 
 	root := any(&commands.Root)
-	if os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help" {
+	metaHelp := os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help"
+	if metaHelp {
 		root = &commands.RootWithVersion
 	}
 
@@ -130,15 +131,14 @@ func main() {
 	}
 
 	settings.Load()
-	if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
 
-	// Refresh Windows Apps uninstall strings (QuietUninstallString / --from-apps) for existing installs.
-	// Skip during Apps-driven uninstall so we don't rewrite ARP mid-removal.
-	if !argsContainFromApps(os.Args) {
-		_ = installer.RegisterInstalledVersions()
+	// Help must stay near-instant. Full bootstrap (reshim, ACL harden,
+	// scheduled task, Windows Apps re-register) is for mutating commands.
+	if !metaHelp {
+		if err := bootstrap.EnsureUserProfileInitialized(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	cli := kong.Parse(

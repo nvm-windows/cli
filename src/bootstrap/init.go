@@ -49,32 +49,6 @@ func EnsureUserProfileInitialized() error {
 		fmt.Fprintf(os.Stderr, "nvm: warning: runtime dirs skipped: %v\n", err)
 	}
 
-	if state.version < currentBootstrapVersion {
-		if err := cleanupLegacyUserPayload(dataRoot); err != nil {
-			fmt.Fprintf(os.Stderr, "nvm: warning: legacy cleanup skipped: %v\n", err)
-		}
-	}
-
-	programSyncRoot, err := ProgramSyncRoot()
-	if err != nil {
-		return err
-	}
-
-	dataSyncRoot, err := DataSyncRoot()
-	if err != nil {
-		return err
-	}
-
-	if err := seedDirectoryContents(programSyncRoot, dataSyncRoot); err != nil {
-		fmt.Fprintf(os.Stderr, "nvm: warning: sync asset seed skipped: %v\n", err)
-	}
-
-	if err := MaintainShimDirectory(); err != nil {
-		// Shim ACL/replace can fail for medium-IL admins after an elevated lock.
-		// Do not brick every command (help/env/list); warn and continue.
-		fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
-	}
-
 	nodejsPath, err := NodejsPath()
 	if err != nil {
 		return err
@@ -106,6 +80,44 @@ func EnsureUserProfileInitialized() error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "nvm: warning: profile repair check skipped: %v\n", err)
 		needsRepair = true
+	}
+
+	// Fast path: profile already healthy. Avoid reshim/ACL/schtasks/seed on every command.
+	// MaintainShimDirectory is a no-op unless Program Files shims are newer than data copies.
+	if !needsRepair && state.version >= currentBootstrapVersion {
+		if err := verifycache.EnsureVerifyKey(dataRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "nvm: verify cache warning: %v\n", err)
+		}
+		if err := MaintainShimDirectory(); err != nil {
+			fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
+		}
+		return nil
+	}
+
+	if state.version < currentBootstrapVersion {
+		if err := cleanupLegacyUserPayload(dataRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "nvm: warning: legacy cleanup skipped: %v\n", err)
+		}
+	}
+
+	programSyncRoot, err := ProgramSyncRoot()
+	if err != nil {
+		return err
+	}
+
+	dataSyncRoot, err := DataSyncRoot()
+	if err != nil {
+		return err
+	}
+
+	if err := seedDirectoryContents(programSyncRoot, dataSyncRoot); err != nil {
+		fmt.Fprintf(os.Stderr, "nvm: warning: sync asset seed skipped: %v\n", err)
+	}
+
+	if err := MaintainShimDirectory(); err != nil {
+		// Shim ACL/replace can fail for medium-IL admins after an elevated lock.
+		// Do not brick every command (help/env/list); warn and continue.
+		fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
 	}
 
 	enabled, err := managementEnabled()

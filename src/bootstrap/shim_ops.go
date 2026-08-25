@@ -96,14 +96,77 @@ func RunReshim(args ...string) error {
 	return nil
 }
 
-// MaintainShimDirectory syncs canonical shims and reconciles module hardlinks.
+// MaintainShimDirectory syncs canonical shims when stale and only then reshims.
+// Reshim alone can take multiple seconds; never run it on a no-op sync.
 func MaintainShimDirectory() error {
+	needsSync, err := shimAssetsNeedSync()
+	if err != nil {
+		return err
+	}
+	if !needsSync {
+		return nil
+	}
+
 	return runWithShimMaintenance(func() error {
 		if err := syncShimAssetsUnlocked(); err != nil {
 			return err
 		}
 		return runReshimUnlocked("--silent")
 	})
+}
+
+func shimAssetsNeedSync() (bool, error) {
+	programShimPath, err := ProgramShimPath()
+	if err != nil {
+		return false, err
+	}
+	shimDir, err := ShimDir()
+	if err != nil {
+		return false, err
+	}
+	programProxyPath, err := ProgramProxyPath()
+	if err != nil {
+		return false, err
+	}
+	dataProxyPath, err := DataProxyPath()
+	if err != nil {
+		return false, err
+	}
+
+	for _, pair := range [][2]string{
+		{programShimPath, filepath.Join(shimDir, "node.exe")},
+		{programProxyPath, dataProxyPath},
+	} {
+		stale, err := executablePairStale(pair[0], pair[1])
+		if err != nil {
+			return false, err
+		}
+		if stale {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func executablePairStale(sourcePath, targetPath string) (bool, error) {
+	sourceInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	targetInfo, err := os.Stat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if sourceInfo.Size() != targetInfo.Size() || sourceInfo.ModTime().After(targetInfo.ModTime()) {
+		return true, nil
+	}
+	return false, nil
 }
 
 func syncShimAssetsUnlocked() error {
