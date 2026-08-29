@@ -349,7 +349,10 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	fromCache := false
 	if cacheFile != "" {
 		if _, err := os.Stat(cacheFile); err == nil {
-			if err := verifyCachedNodeArchiveIntegrity(ctx, version, cacheFile, cfg); err != nil {
+			status.Verifying++
+			err := verifyCachedNodeArchiveIntegrity(ctx, version, cacheFile, cfg)
+			status.Verifying--
+			if err != nil {
 				log.Logf("invalid cached Node.js v%s archive removed: %v", version, err)
 				invalidateCachedNodeArchive(cacheFile)
 			} else {
@@ -472,7 +475,10 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 				continue
 			}
 
+			status.Downloads--
+			status.Verifying++
 			verified, err := verifyNodeSHASUM(archivePath, shasumPath)
+			status.Verifying--
 			_ = os.Remove(shasumPath)
 			if err != nil {
 				_ = os.Remove(archivePath)
@@ -487,9 +493,8 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 			break
 		}
 
-		status.Downloads--
-
 		if !downloaded {
+			status.Downloads--
 			return fmt.Errorf("Node.js v%s not found on server/mirror", version)
 		}
 
@@ -535,8 +540,10 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		return err
 	}
 
+	status.Verifying++
 	publisher, err := verifyAllowedSigner(filepath.Join(installDir, "node.exe"))
 	if err != nil {
+		status.Verifying--
 		return fmt.Errorf("unable to verify Node.js signer for v%s: %w", version, err)
 	}
 
@@ -546,6 +553,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	if err := verifycache.SignVersionScripts(installDir); err != nil {
 		log.Logf("script trust warning for v%s: %v", version, err)
 	}
+	status.Verifying--
 
 	if err := fs.HardenManagedDirectory(installDir); err != nil {
 		return fmt.Errorf("unable to harden version directory for v%s: %w", version, err)

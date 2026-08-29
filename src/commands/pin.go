@@ -169,7 +169,7 @@ func (c *Pin) Run() error {
 			return fmt.Errorf("failed to write package.json: %w", err)
 		}
 
-		msg := fmt.Sprintf("Successfully set %s Node.js engine to Node.js v%s (with npm v%s)", c.File, node_version, npm_version)
+		msg := fmt.Sprintf("Successfully pinned %s Node.js engine to Node.js v%s (with npm v%s)", c.File, node_version, npm_version)
 		fmt.Println(msg)
 		if !system.IsAppInForeground() {
 			go notify.Send(settings.AppId, "", msg)
@@ -180,7 +180,7 @@ func (c *Pin) Run() error {
 			return fmt.Errorf("failed to write version to %s: %w", c.File, err)
 		}
 
-		msg := fmt.Sprintf("Successfully set %s Node.js version to v%s", c.File, node_version)
+		msg := fmt.Sprintf("Successfully pinned %s Node.js version to v%s", c.File, node_version)
 		fmt.Println(msg)
 		if !system.IsAppInForeground() {
 			go notify.Send(settings.AppId, "", msg)

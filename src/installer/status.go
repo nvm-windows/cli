@@ -22,6 +22,7 @@ type Status struct {
 	Extractions      int
 	TotalExtractions int
 	ExtractionPct    int
+	Verifying        int
 	TotalCached      int
 	Npm              int
 	NpmLabel         string
@@ -40,6 +41,7 @@ func newStatus() *Status {
 		TotalDownloads:   0,
 		Extractions:      0,
 		TotalExtractions: 0,
+		Verifying:        0,
 		TotalCached:      0,
 		TotalInstalled:   0,
 		Npm:              0,
@@ -85,6 +87,10 @@ func (s *Status) update() {
 
 	if s.Extractions > 0 {
 		actions = append(actions, "Extracting")
+	}
+
+	if s.Verifying > 0 {
+		actions = append(actions, "Verifying")
 	}
 
 	if s.Npm > 0 && s.NpmLabel != "" && len(strings.TrimSpace(s.NpmLabel)) > 0 {
