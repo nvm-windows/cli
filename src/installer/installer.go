@@ -547,9 +547,9 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 		return fmt.Errorf("unable to verify Node.js signer for v%s: %w", version, err)
 	}
 
-	if err := fs.HardenManagedDirectory(installDir); err != nil {
+	if err := fs.FinalizeVersionDirectoryACL(installDir); err != nil {
 		status.Verifying--
-		return fmt.Errorf("unable to harden version directory for v%s: %w", version, err)
+		return fmt.Errorf("unable to finalize version directory ACLs for v%s: %w", version, err)
 	}
 
 	if err := verifycache.SignNodeCache(filepath.Join(installDir, "node.exe")); err != nil {
