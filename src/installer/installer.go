@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/windows/registry"
@@ -104,13 +105,14 @@ func Install(cfg InstallConfig) error {
 	txns := make([]*Transaction, 0, len(dedupe))
 	var modulesInstalledMu sync.Mutex
 	modulesInstalled := false
+	var failures atomic.Int32
 	index := 0
 	for version := range dedupe {
 		index++
 		txn := &Transaction{}
 		txns = append(txns, txn)
 		wg.Add(1)
-		go install(ctx, version, cfg, &wg, status, index, txn, &modulesInstalledMu, &modulesInstalled)
+		go install(ctx, version, cfg, &wg, status, index, txn, &modulesInstalledMu, &modulesInstalled, &failures)
 	}
 
 	wg.Wait()
@@ -136,6 +138,9 @@ func Install(cfg InstallConfig) error {
 	}
 
 	status.Done()
+	if failures.Load() > 0 {
+		return fmt.Errorf("%d version(s) failed to install", failures.Load())
+	}
 	return nil
 }
 
@@ -149,8 +154,13 @@ func install(
 	txn *Transaction,
 	modulesInstalledMu *sync.Mutex,
 	modulesInstalled *bool,
+	failures *atomic.Int32,
 ) {
 	defer wg.Done()
+
+	markFailed := func() {
+		failures.Add(1)
+	}
 
 	status.Versions[index-1] = ""
 
@@ -158,12 +168,14 @@ func install(
 	if err != nil {
 		status.Alert(fmt.Errorf("FAILED v%s: %v", version, err), false)
 		log.LogSystemChanged("install", version, "", log.OutcomeFailed, err.Error())
+		markFailed()
 		return
 	}
 
 	if allowed, err := acl.IsAllowedVersion(nodeVersion); !allowed {
 		status.Alert(fmt.Errorf("%v", err), false)
 		log.LogSystemChanged("install", nodeVersion, "", log.OutcomeFailed, err.Error())
+		markFailed()
 		return
 	}
 
@@ -188,6 +200,7 @@ func install(
 			if trustErr := fs.CheckVersionDirTrust(txn.installDir); trustErr != nil {
 				status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
 				log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, trustErr.Error())
+				markFailed()
 				return
 			}
 			status.Alert(fmt.Errorf("SKIPPED: v%s is already installed", nodeVersion), false)
@@ -199,6 +212,7 @@ func install(
 	if supported, err := version_support.IsSupportedVersion(nodeVersion); !supported {
 		status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, err), false)
 		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
+		markFailed()
 		return
 	}
 
@@ -208,6 +222,7 @@ func install(
 		if err := os.Rename(txn.installDir, backupPath); err != nil {
 			status.Alert(fmt.Errorf("FAILED v%s: could not prepare rollback backup: %w", nodeVersion, err))
 			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
+			markFailed()
 			return
 		}
 		txn.installBackup = backupPath
@@ -220,6 +235,7 @@ func install(
 			}
 			status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
 			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, trustErr.Error())
+			markFailed()
 			return
 		}
 		if err := os.MkdirAll(txn.installDir, 0755); err != nil {
@@ -228,6 +244,7 @@ func install(
 			}
 			status.Alert(fmt.Errorf("FAILED: v%s could not prepare install root %s: %w", nodeVersion, txn.installDir, err))
 			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, err.Error())
+			markFailed()
 			return
 		}
 		if !txn.installed {
@@ -274,6 +291,7 @@ func install(
 		}
 		status.Alert(fmt.Errorf("FAILED v%s: %v", nodeVersion, processErr))
 		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, processErr.Error())
+		markFailed()
 		return
 	}
 
@@ -300,6 +318,7 @@ func install(
 		}
 		status.Alert(fmt.Errorf("FAILED v%s: %v", nodeVersion, processErr))
 		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, processErr.Error())
+		markFailed()
 		return
 	}
 

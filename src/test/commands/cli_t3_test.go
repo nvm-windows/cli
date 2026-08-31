@@ -32,12 +32,12 @@ func TestCLIInstallFailsUnknownVersion(t *testing.T) {
 	sb.ApplyNodeMirrorFixture(t, clitest.TestdataPath(t, "index.tab"))
 
 	stdout, stderr, err := sb.ExecuteWithSyncStub("install", "not-a-real-alias")
-	if err != nil {
-		t.Fatalf("Execute(install not-a-real-alias) unexpected error = %v", err)
+	if err == nil {
+		t.Fatal("Execute(install not-a-real-alias) expected error, got nil")
 	}
-	combined := strings.ToLower(stdout + stderr)
+	combined := strings.ToLower(stdout + stderr + err.Error())
 	if !strings.Contains(combined, "unknown alias") && !strings.Contains(combined, "failed") {
-		t.Fatalf("Execute(install not-a-real-alias) output = stdout:%q stderr:%q", stdout, stderr)
+		t.Fatalf("Execute(install not-a-real-alias) output = stdout:%q stderr:%q err:%v", stdout, stderr, err)
 	}
 }
 
@@ -63,12 +63,12 @@ func TestCLIInstallLocalOnlyMissingArchive(t *testing.T) {
 	}
 
 	stdout, stderr, err := sb.ExecuteWithSyncStub("install", "22.0.0")
-	if err != nil {
-		t.Fatalf("Execute(install 22.0.0) unexpected error = %v stderr = %q", err, stderr)
+	if err == nil {
+		t.Fatal("Execute(install 22.0.0) expected error, got nil")
 	}
-	combined := stdout + stderr
+	combined := stdout + stderr + err.Error()
 	if !strings.Contains(combined, "local install directory") {
-		t.Fatalf("Execute(install 22.0.0) output = stdout:%q stderr:%q, want local install error", stdout, stderr)
+		t.Fatalf("Execute(install 22.0.0) output = stdout:%q stderr:%q err:%v, want local install error", stdout, stderr, err)
 	}
 }
 
