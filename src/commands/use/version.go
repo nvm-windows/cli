@@ -1,21 +1,14 @@
 package use
 
 import (
-	"common/notify"
 	"common/resolver"
 	"common/settings"
-	"common/system"
-	"common/verifycache"
 	"fmt"
-	"nvm/bootstrap"
 	"nvm/constant"
 	"nvm/installer"
-	"nvm/link"
 	"nvm/log"
 	"nvm/prompt"
-	"nvm/reshim"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -165,88 +158,5 @@ func (s *Version) Run() error {
 		return nil
 	}
 
-	if err := settings.Put("active_version", version); err != nil {
-		return err
-	}
-
-	base, err := bootstrap.DataRoot()
-	if err != nil {
-		log.Error(err)
-		return fmt.Errorf("failed to resolve runtime root: %w", err)
-	}
-	symlink := filepath.Join(base, ".nodejs")
-
-	mode, err := getStringSetting("mode")
-	if err != nil {
-		log.Error(err)
-		return err
-	} else if mode == "link" {
-		source, err := getStringSetting("root")
-		if err != nil {
-			log.Error(err)
-			return fmt.Errorf("failed to get install root: %w", err)
-		}
-
-		if _, err := os.Lstat(filepath.Join(base, ".link")); err != nil {
-			if os.IsNotExist(err) {
-				if err := bootstrap.EnsureHiddenDir(filepath.Join(base, ".link")); err != nil {
-					log.Error(err)
-					return fmt.Errorf("failed to create .link directory: %w", err)
-				}
-			} else {
-				log.Error(err)
-				return fmt.Errorf("failed to access .link directory: %w", err)
-			}
-		}
-
-		versionDir := filepath.Join(source, "v"+version)
-		if err := bootstrap.ValidateVersionActivation(versionDir); err != nil {
-			return err
-		}
-		if err := link.Link(versionDir, filepath.Join(base, ".link/nodejs")); err != nil {
-			// Don't log to event log here because the link method does this
-			// automatically (with more specific detail)
-			return err
-		}
-	}
-
-	// Always update the .nodejs junction to match the current mode
-	rel_path := ".shim"
-	if mode == "link" {
-		rel_path = ".link/nodejs"
-	}
-
-	if err := link.Link(filepath.Join(base, rel_path), symlink); err != nil {
-		log.Error(err)
-		return err
-	}
-
-	if mode == "shim" {
-		if err := reshim.Run(); err != nil {
-			log.Error(err)
-			return err
-		}
-	} else if source, err := getStringSetting("root"); err == nil {
-		versionDir := filepath.Join(source, "v"+version)
-		if err := verifycache.SignNodeCache(filepath.Join(versionDir, "node.exe")); err != nil {
-			log.Logf("verify cache warning: %v", err)
-		}
-		if err := verifycache.SignVersionScripts(versionDir); err != nil {
-			log.Logf("script trust warning: %v", err)
-		}
-	}
-
-	if err := settings.Put("last_version", lastVersion); err != nil {
-		log.Error(err)
-		return err
-	}
-
-	log.Logf("Now using Node.js v%s by default", version)
-	msg := fmt.Sprintf("Now using Node.js v%s by default.", version)
-	fmt.Fprintln(os.Stdout, msg)
-	if !system.IsAppInForeground() {
-		go notify.Send(settings.AppId, "", msg)
-	}
-
-	return nil
+	return installer.ActivateVersion(version)
 }
