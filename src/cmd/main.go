@@ -82,6 +82,13 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--clear-machine-licensing":
+		// Invoked by the Inno Setup uninstaller before payload removal.
+		if err := installer.ClearMachineLicensing(); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--remove-sync-tasks":
 		// Invoked by the MSI on install/upgrade so reinstalls drop stale sync tasks
 		// (community or prior certified). First-launch bootstrap recreates the task.
