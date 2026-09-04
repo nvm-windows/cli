@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"common/fs"
 	"common/license"
+	"common/notify"
 	"common/settings"
 	"common/system"
 	"common/verifycache"
@@ -14,6 +16,7 @@ import (
 	"nvm/legacy"
 	"nvm/log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -102,6 +105,78 @@ func main() {
 		// toast historical feed items before the user launches nvm.
 		settings.Load()
 		if err := settings.SeedAnnouncementWatermarksIfEmpty(settings.PutMachine); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	case "--repair-runtime-acls":
+		// Invoked by Inno Setup post-install (elevated) and mirrors doctor --autofix ACL repair:
+		// harden InstallRoot/DataRoot, repair each installed version dir (NVM4305), re-lock shim/proxy.
+		settings.Load()
+		installRoot, err := bootstrap.InstallRoot()
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		dataRoot, err := bootstrap.DataRoot()
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		if err := fs.RepairRuntimeACLs(installRoot, dataRoot); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		_ = settings.Put("runtime_acl_degraded", false)
+		return
+	case "--check-runtime-acls":
+		// Exit 0 when InstallRoot (+ version dirs) are trust-safe after a current-token repair attempt.
+		// Optional arg: absolute InstallRoot to check (silent installer probes HKCU path before migrating).
+		settings.Load()
+		installRoot := ""
+		if len(os.Args) >= 3 && strings.TrimSpace(os.Args[2]) != "" {
+			installRoot = filepath.Clean(settings.Expand(strings.TrimSpace(os.Args[2])))
+		} else {
+			var err error
+			installRoot, err = bootstrap.InstallRoot()
+			if err != nil {
+				fmt.Fprint(os.Stderr, err.Error())
+				os.Exit(1)
+			}
+		}
+		dataRoot := filepath.Dir(installRoot)
+		_ = fs.RepairRuntimeACLs(installRoot, dataRoot)
+		if fs.AllowsCrossUserWrite(installRoot) {
+			fmt.Fprint(os.Stderr, "install root remains writable by other users\n")
+			os.Exit(1)
+		}
+		issues, err := fs.CollectVersionDirectoryTrustIssues(installRoot)
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		if len(issues) > 0 {
+			fmt.Fprintf(os.Stderr, "%d version director(y/ies) remain untrusted\n", len(issues))
+			os.Exit(1)
+		}
+		os.Exit(0)
+		return
+	case "--notify-storage-migrated":
+		// Silent installer toast after forcing AppData because prior InstallRoot was unsafe.
+		if len(os.Args) < 4 {
+			fmt.Fprint(os.Stderr, "usage: nvm --notify-storage-migrated <old-root> <new-root>\n")
+			os.Exit(1)
+		}
+		oldRoot := strings.TrimSpace(os.Args[2])
+		newRoot := strings.TrimSpace(os.Args[3])
+		_ = notify.Register(settings.AppId, name)
+		msg := fmt.Sprintf(
+			"Previous Node.js storage was not permission-safe, so NVM moved it to AppData.\n\nOld: %s\nNew: %s\n\nTo use the old path later (after hardening): nvm cfg set root=%s",
+			oldRoot,
+			newRoot,
+			oldRoot,
+		)
+		if err := notify.Send(settings.AppId, "NVM storage location updated", msg); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
 		}

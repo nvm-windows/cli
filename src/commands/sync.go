@@ -72,6 +72,9 @@ func (c *Doctor) Run() error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = filepath.Dir(sync)
+	if programRoot, err := bootstrap.ProgramRoot(); err == nil {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("NVM_EXE_PATH=%s", filepath.Join(programRoot, "nvm.exe")))
+	}
 
 	return cmd.Run()
 }
