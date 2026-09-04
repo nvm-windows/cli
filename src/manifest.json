@@ -31,6 +31,7 @@
     "common/preferences.subkey": "Preferences",
     "common/preferences.app": "manifest.name",
     "common/settings.AppId": "manifest.appUserModelId",
+    "common/notify.DisplayName": "manifest.appLabel",
     "common/http.appname": "manifest.appLabel",
     "common/http.version": "manifest.version",
     "common/http.edition": "community",

@@ -169,7 +169,7 @@ func main() {
 		}
 		oldRoot := strings.TrimSpace(os.Args[2])
 		newRoot := strings.TrimSpace(os.Args[3])
-		_ = notify.Register(settings.AppId, name)
+		_ = notify.Register(settings.AppId, eventSourceName)
 		msg := fmt.Sprintf(
 			"Previous Node.js storage was not permission-safe, so NVM moved it to AppData.\n\nOld: %s\nNew: %s\n\nTo use the old path later (after hardening): nvm cfg set root=%s",
 			oldRoot,
