@@ -189,7 +189,12 @@ func main() {
 		}
 		return
 	case "-v", "--version", "version":
+		settings.Load()
 		fmt.Printf("v%s\n", version)
+		if mark := communityEditionWatermark(); mark != "" {
+			fmt.Println(mark)
+		}
+		warnCommunityProgramRootIfNeeded()
 		return
 	case "-h", "--help", "help":
 		// Handled by kong after lightweight init (no shim/reshim/ARP).
@@ -213,11 +218,17 @@ func main() {
 	}
 
 	settings.Load()
+	warnCommunityProgramRootIfNeeded()
+
+	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
+	if mark := communityEditionWatermark(); mark != "" {
+		desc = fmt.Sprintf("%s\nv%s (%s Edition).\n%s.", description, version, license.Edition(), mark)
+	}
 
 	cli := kong.Parse(
 		root,
 		kong.Name(name),
-		kong.Description(fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())),
+		kong.Description(desc),
 		kong.UsageOnError(),
 		kong.Vars{
 			"app":       name,
