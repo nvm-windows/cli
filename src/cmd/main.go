@@ -77,6 +77,20 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--reshim":
+		// Invoked by proxy after global package installs. Must open the .shim
+		// ACL write window (RunWithRuntimeShimWrite); spawning reshim.exe alone
+		// cannot create hardlinks against the locked directory.
+		settings.Load()
+		args := []string{}
+		if len(os.Args) > 2 {
+			args = os.Args[2:]
+		}
+		if err := bootstrap.RunReshim(args...); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--cleanup-user-appdata":
 		// Invoked by the MSI during a real uninstall to remove the current user's
 		// AppData runtime root before Program Files payload removal.
