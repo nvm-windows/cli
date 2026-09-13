@@ -402,6 +402,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 	if !fromCache && !cfg.LocalOnly {
 		downloaded := false
 		var downloadEnd time.Time
+		var lastDownloadErr error
 		insecure := allowInsecureDownloads(cfg)
 		mirrors := settings.Global().NodeMirror
 		singleMirror := len(mirrors) == 1
@@ -422,6 +423,8 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 			shasumURI := fmt.Sprintf("%s/v%s/SHASUMS256.txt", mirror, version)
 			shasumJob, err := http.Download(shasumURI, http.DownloadConfig{Cache: true, Destination: shasumPath, AllowInsecure: insecure})
 			if err != nil {
+				lastDownloadErr = fmt.Errorf("checksum %s: %w", shasumURI, err)
+				log.Logf("mirror %s skipped for v%s: %v", mirror, version, lastDownloadErr)
 				continue
 			}
 
@@ -438,6 +441,12 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 							return authErr
 						}
 					}
+					if ok {
+						lastDownloadErr = describeDownloadResultFailure("checksum", shasumURI, result)
+					} else {
+						lastDownloadErr = fmt.Errorf("checksum %s: download closed unexpectedly", shasumURI)
+					}
+					log.Logf("mirror %s skipped for v%s: %v", mirror, version, lastDownloadErr)
 					continue
 				}
 			}
@@ -446,12 +455,16 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 			normalizedURI, err := http.NormalizeURL(uri)
 			if err != nil {
 				_ = os.Remove(shasumPath)
+				lastDownloadErr = fmt.Errorf("archive %s: %w", uri, err)
+				log.Logf("mirror %s skipped for v%s: %v", mirror, version, lastDownloadErr)
 				continue
 			}
 
 			job, err := http.Download(normalizedURI, http.DownloadConfig{Destination: target, AllowInsecure: insecure})
 			if err != nil {
 				_ = os.Remove(shasumPath)
+				lastDownloadErr = fmt.Errorf("archive %s: %w", normalizedURI, err)
+				log.Logf("mirror %s skipped for v%s: %v", mirror, version, lastDownloadErr)
 				continue
 			}
 
@@ -470,7 +483,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 					}
 				case result, ok := <-job.Result:
 					if !ok {
-						downloadErr = fmt.Errorf("download closed unexpectedly")
+						downloadErr = fmt.Errorf("archive %s: download closed unexpectedly", normalizedURI)
 						break downloadLoop
 					}
 					if result.Error != nil || result.Response == nil || !result.Response.Success {
@@ -480,7 +493,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 								break downloadLoop
 							}
 						}
-						downloadErr = fmt.Errorf("download error")
+						downloadErr = describeDownloadResultFailure("archive", normalizedURI, result)
 						break downloadLoop
 					}
 					downloadEnd = time.Now()
@@ -498,6 +511,8 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 					status.Downloads--
 					return downloadErr
 				}
+				lastDownloadErr = downloadErr
+				log.Logf("mirror %s skipped for v%s: %v", mirror, version, lastDownloadErr)
 				continue
 			}
 
@@ -521,7 +536,7 @@ func downloadNode(ctx context.Context, version, target string, cfg InstallConfig
 
 		if !downloaded {
 			status.Downloads--
-			return fmt.Errorf("Node.js v%s not found on server/mirror", version)
+			return formatNodeMirrorDownloadFailure(version, archiveName, mirrors, lastDownloadErr)
 		}
 
 		if logf != nil {
