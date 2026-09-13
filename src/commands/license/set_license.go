@@ -1,10 +1,13 @@
 package license
 
 import (
+	nvmlicense "common/license"
 	"common/settings"
 	"common/system"
+	"common/token"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type SetKey struct {
@@ -25,6 +28,12 @@ func setMachineLicensingValue(name, label, value string) error {
 		return fmt.Errorf("%s is empty", label)
 	}
 
+	if name == "access_token" {
+		if err := token.Set(trimmed); err != nil {
+			return fmt.Errorf("failed to verify access token: %w", err)
+		}
+	}
+
 	if err := settings.PutMachine(name, trimmed); err != nil {
 		return fmt.Errorf("failed to set machine %s: %w", label, err)
 	}
@@ -37,6 +46,13 @@ func setMachineLicensingValue(name, label, value string) error {
 	stored, ok := got.(string)
 	if !ok || stored != trimmed {
 		return fmt.Errorf("failed to verify machine %s after write", label)
+	}
+
+	if name == "access_token" {
+		// Provisional stamp so deploy isn't Community until the first sync tick.
+		if err := nvmlicense.StampLicenseVerified(time.Now()); err != nil {
+			return fmt.Errorf("access token stored but failed to stamp verification time: %w", err)
+		}
 	}
 
 	return nil
