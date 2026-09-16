@@ -48,6 +48,7 @@ type Doctor struct {
 	Checks  []string `arg:"" optional:"" help:"Specific checks to run. If not specified, all checks will be run."`
 	Autofix bool     `flag:"autofix" help:"Automatically fix issues when possible."`
 	List    bool     `flag:"list" help:"List all available checks without running them."`
+	Update  bool     `flag:"update" help:"Force sync utility asset update before running checks."`
 	constant.FlagJSON
 }
 
@@ -63,6 +64,9 @@ func (c *Doctor) Run() error {
 	}
 	if c.Autofix {
 		args = append(args, "--autofix")
+	}
+	if c.Update {
+		args = append(args, "--update")
 	}
 	if c.JSON {
 		args = append(args, "--json")
