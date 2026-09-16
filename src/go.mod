@@ -44,6 +44,8 @@ replace common/cose v1.0.0 => ../../common/cose
 
 replace common/license v1.0.0 => ../../common/licensing
 
+replace common/modulefirewall v1.0.0 => ../../common/modulefirewall
+
 require (
 	common/acl v1.0.0
 	common/config v1.0.0
@@ -53,6 +55,7 @@ require (
 	common/inspect v1.0.0
 	common/license v1.0.0
 	common/mirrorauth v1.0.0
+	common/modulefirewall v1.0.0
 	common/notify v1.0.0
 	common/preferences v1.0.0
 	common/registry v1.0.0

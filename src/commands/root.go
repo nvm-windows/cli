@@ -4,6 +4,7 @@ import (
 	"nvm/commands/alias"
 	"nvm/commands/cache"
 	"nvm/commands/cfg"
+	"nvm/commands/firewall"
 	"nvm/commands/install"
 	"nvm/commands/license"
 	"nvm/commands/list"
@@ -26,6 +27,7 @@ type RootCommand struct {
 	Env          Env           `cmd:"env" help:"Display ${app} environment details."`
 	Cache        cache.Root    `cmd:"cache" help:"View and manage the ${app} cache."`
 	Config       cfg.Root      `cmd:"config" aliases:"cfg" help:"View and manage the ${app} configuration."`
+	Firewall     firewall.Root `cmd:"firewall" help:"Manage NVM trust firewall policy."`
 	On           Toggle        `cmd:"on" help:"Manage Node.js with ${app}."`
 	Off          Toggle        `cmd:"off" help:"Stop managing Node.js with ${app}."`
 	Doctor       Doctor        `cmd:"doctor" help:"Detect and fix common ${app} issues." hidden:"true"`
