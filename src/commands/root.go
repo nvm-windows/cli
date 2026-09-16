@@ -4,6 +4,7 @@ import (
 	"nvm/commands/alias"
 	"nvm/commands/cache"
 	"nvm/commands/cfg"
+	"nvm/commands/firewall"
 	"nvm/commands/install"
 	"nvm/commands/license"
 	"nvm/commands/list"
@@ -26,11 +27,12 @@ type RootCommand struct {
 	Env          Env           `cmd:"env" help:"Display ${app} environment details."`
 	Cache        cache.Root    `cmd:"cache" help:"View and manage the ${app} cache."`
 	Config       cfg.Root      `cmd:"config" aliases:"cfg" help:"View and manage the ${app} configuration."`
+	Firewall     firewall.Root `cmd:"firewall" help:"Manage NVM version/module/trust firewall policy."`
 	On           Toggle        `cmd:"on" help:"Manage Node.js with ${app}."`
 	Off          Toggle        `cmd:"off" help:"Stop managing Node.js with ${app}."`
 	Doctor       Doctor        `cmd:"doctor" help:"Detect and fix common ${app} issues." hidden:"true"`
 	Debug        Doctor        `cmd:"debug" hidden:"true"`
-	Reshim       Reshim        `cmd:"reshim" hidden:"true"`
+	Reshim       Reshim        `cmd:"reshim" help:"Rebuild shims / re-trust package-manager entrypoints."`
 	Upgrade      Upgrade       `cmd:"upgrade" help:"Upgrade ${app}." hidden:"true"`
 	Subscribe    Subscribe     `cmd:"subscribe" help:"Subscribe to ${app} updates." hidden:"true"`
 	License      license.Root  `cmd:"license" help:"Set/clear ${app} license." hidden:"true"`
