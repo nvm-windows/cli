@@ -22,9 +22,11 @@ const (
 )
 
 type Root struct {
-	Allow AllowRoot `cmd:"allow" help:"Allow versions or modules through the NVM firewall (certified)."`
-	Deny  DenyRoot  `cmd:"deny" help:"Deny versions or modules through the NVM firewall (certified)."`
-	Trust TrustRoot `cmd:"trust" help:"Manage TrustedModules for self-updating global CLIs."`
+	Allow       AllowRoot   `cmd:"allow" help:"Allow versions or modules through the NVM firewall (certified)."`
+	Deny        DenyRoot    `cmd:"deny" help:"Deny versions or modules through the NVM firewall (certified)."`
+	Trust       TrustRoot   `cmd:"trust" help:"Manage TrustedModules for self-updating global CLIs."`
+	CheckRemote CheckRemote `cmd:"check-remote" hidden:"true" help:"Internal: HTTPS ApprovedModules evaluation for proxy."`
+	PromptTrust PromptTrust `cmd:"prompt-trust" hidden:"true" help:"Internal: dual-channel trust prompt for proxy."`
 }
 
 type AllowRoot struct {
