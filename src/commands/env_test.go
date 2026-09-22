@@ -6,6 +6,37 @@ import (
 	"testing"
 )
 
+func TestSummarizeTrustedModules(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []string
+		want    string
+	}{
+		{name: "empty defaults to zero", entries: nil, want: "0"},
+		{name: "not all alone", entries: []string{"NOT ALL"}, want: "0"},
+		{name: "all", entries: []string{"ALL"}, want: "ALL"},
+		{name: "exceptions", entries: []string{"NOT ALL", "opencode", "porthog"}, want: "2"},
+		{name: "exclusive positives", entries: []string{"eslint", "prettier"}, want: "2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := summarizeTrustedModules(tt.entries)
+			if got != tt.want {
+				t.Fatalf("summarizeTrustedModules(%v) = %q, want %q", tt.entries, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUntrustedHandlerLabel(t *testing.T) {
+	if got := untrustedHandlerLabel(""); got != "prompt" {
+		t.Fatalf("empty = %q, want prompt", got)
+	}
+	if got := untrustedHandlerLabel("ALLOW"); got != "allow" {
+		t.Fatalf("ALLOW = %q, want allow", got)
+	}
+}
+
 func TestFormatSize(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -32,10 +32,3 @@ func warnCommunityProgramRootIfNeeded() {
 		_ = err
 	}
 }
-
-func communityEditionWatermark() string {
-	if license.Edition() != "Community" {
-		return ""
-	}
-	return "Community (per-user LocalAppData install; see nvm doctor)"
-}

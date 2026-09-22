@@ -18,10 +18,13 @@ func LogSystemChanged(action, nodeVersion, resolvedPath, outcome, detail string,
 	}
 
 	payload := StructuredPayload{
-		"Action":      action,
-		"NodeVersion": nodeVersion,
-		"Outcome":     outcome,
-		"User":        Actor(),
+		"Action":         action,
+		"NodeVersion":    nodeVersion,
+		"Outcome":        outcome,
+		"User":           Actor(),
+		"sid":            ActorSid(),
+		"hostname":       Hostname(),
+		"correlation_id": NewCorrelationID(),
 	}
 	if strings.TrimSpace(resolvedPath) != "" {
 		payload["ResolvedPath"] = resolvedPath
@@ -52,10 +55,13 @@ func LogConfigurationChanged(key, value, oldValue, outcome, detail string) {
 	}
 
 	payload := StructuredPayload{
-		"Action":        "Modified",
-		"Configuration": key,
-		"Outcome":       outcome,
-		"User":          Actor(),
+		"Action":         "Modified",
+		"Configuration":  key,
+		"Outcome":        outcome,
+		"User":           Actor(),
+		"sid":            ActorSid(),
+		"hostname":       Hostname(),
+		"correlation_id": NewCorrelationID(),
 	}
 	if strings.TrimSpace(value) != "" {
 		payload["Value"] = value

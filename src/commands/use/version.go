@@ -15,8 +15,8 @@ import (
 type Version struct {
 	constant.FlagInstall
 	constant.FlagNoInstall
-	constant.ArgVersion
-	Local bool `flag:"local" short:"l" help:"Use the latest installed version matching the specified partial version."`
+	Version []string `arg:"" name:"version" optional:"" help:"Node.js version to activate (e.g. latest, lts, x.x.x)."`
+	Local   bool     `flag:"local" short:"l" help:"Use the latest installed version matching the specified partial version."`
 }
 
 func getStringSetting(name string) (string, error) {
@@ -61,6 +61,9 @@ func notInstalledUseError(version, mode string, autoInstallDisabled bool) error 
 }
 
 func (s *Version) Run() error {
+	if len(s.Version) == 0 {
+		return fmt.Errorf("Missing version. Auto-detection is used by shims (node/npm), not by nvm use.")
+	}
 	requestedVersion := s.Version[0]
 	cfg := settings.Global()
 

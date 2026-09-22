@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"nvm/bootstrap"
 	"nvm/commands"
+	"nvm/commands/firewall"
 	"nvm/installer"
 	"nvm/legacy"
 	"nvm/log"
@@ -35,6 +36,16 @@ func main() {
 		os.Args = append(os.Args, "--help")
 	}
 
+	// Toast / protocol activation (e.g. nvm://firewall?action=trust&...).
+	if strings.HasPrefix(strings.ToLower(os.Args[1]), "nvm://") {
+		settings.Load()
+		if err := firewall.HandleProtocolURI(os.Args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
 	switch os.Args[1] {
 	case "--register-eventlog":
 		// Invoked by OSS installer to support event log registration without needing to run the entire CLI installer.
@@ -55,6 +66,33 @@ func main() {
 
 		log.Log("Event source registered successfully.")
 		return
+	case "--remove-legacy-system-env":
+		// Invoked by the certified MSI (elevated) after InstallFiles to clear v1
+		// SYSTEM NVM_HOME/NVM_SYMLINK and strip community program-root PATH entries
+		// without re-registering the ETW provider (MSI uses wevtutil for that).
+		if err := legacy.RemoveSystemEnvVars(); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	case "--remove-legacy-user-env":
+		// Impersonated MSI CA: clear leftover HKCU NVM_* and community user PATH
+		// so shells pick Program Files nvm without waiting for first bootstrap.
+		settings.Load()
+		dataRoot, err := bootstrap.DataRoot()
+		if err != nil || dataRoot == "" {
+			local := os.Getenv("LOCALAPPDATA")
+			if local == "" {
+				fmt.Fprint(os.Stderr, "LOCALAPPDATA is empty; cannot clean user env\n")
+				os.Exit(1)
+			}
+			dataRoot = filepath.Join(local, "Author Software", "nvm")
+		}
+		if err := bootstrap.RemoveLegacyCurrentUserEnv(dataRoot); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--register-installed-versions":
 		// Invoked by the installer after migration to ensure all migrated
 		// versions are registered in Windows Apps the same way normal installs are.
@@ -67,12 +105,29 @@ func main() {
 	case "--sign-version-scripts":
 		// Invoked by detached reshim after global package installs so proxy
 		// can trust newly written .cmd/.bat launchers without executing them first.
-		if len(os.Args) < 3 {
+		versionDir, wantSignChanged := parseSignVersionScriptsArgs(os.Args[2:])
+		if versionDir == "" {
 			fmt.Fprint(os.Stderr, "missing version directory for --sign-version-scripts\n")
 			os.Exit(1)
 		}
 		settings.Load()
-		if err := verifycache.SignVersionScripts(os.Args[2]); err != nil {
+		_ = os.Unsetenv("NVM_SIGN_CHANGED_MODULES")
+		if wantSignChanged && verifycache.ParentIsNvmReshim() {
+			verifycache.SetAllowSignChanged(true)
+		}
+		if err := verifycache.SignVersionScripts(versionDir); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	case "--sign-script":
+		// Force-resign one launcher after trust prompt (bypass TrustedModules gate).
+		if len(os.Args) < 3 {
+			fmt.Fprint(os.Stderr, "missing script path for --sign-script\n")
+			os.Exit(1)
+		}
+		settings.Load()
+		if err := verifycache.SignScript(os.Args[2]); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
 		}
@@ -82,10 +137,13 @@ func main() {
 		// ACL write window (RunWithRuntimeShimWrite); spawning reshim.exe alone
 		// cannot create hardlinks against the locked directory.
 		settings.Load()
-		args := []string{}
-		if len(os.Args) > 2 {
-			args = os.Args[2:]
+		args, readyEvent := splitReshimArgs(os.Args[2:])
+		_ = os.Unsetenv("NVM_SIGN_CHANGED_MODULES")
+		if verifycache.AuthorizeSignChangedFromParent() {
+			verifycache.SetAllowSignChanged(true)
+			args = append(args, "--sign-changed")
 		}
+		system.SignalNamedEvent(readyEvent)
 		if err := bootstrap.RunReshim(args...); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
@@ -205,9 +263,6 @@ func main() {
 	case "-v", "--version", "version":
 		settings.Load()
 		fmt.Printf("v%s\n", version)
-		if mark := communityEditionWatermark(); mark != "" {
-			fmt.Println(mark)
-		}
 		warnCommunityProgramRootIfNeeded()
 		return
 	case "-h", "--help", "help":
@@ -232,12 +287,10 @@ func main() {
 	}
 
 	settings.Load()
+	settings.ProductVersion = version
 	warnCommunityProgramRootIfNeeded()
 
 	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
-	if mark := communityEditionWatermark(); mark != "" {
-		desc = fmt.Sprintf("%s\nv%s (%s Edition).\n%s.", description, version, license.Edition(), mark)
-	}
 
 	cli := kong.Parse(
 		root,
@@ -310,6 +363,13 @@ func commandNeedsBootstrap(commandPath string) bool {
 	if cmd == "" || cmd == "help" {
 		return false
 	}
+	// Proxy firewall helpers run on every npm i. Skip bootstrap here so an MSI
+	// overwrite does not pay MaintainShimDirectory sync+reshim on the install hot path.
+	// Shim sync still runs on the next user-facing nvm command.
+	if strings.HasPrefix(cmd, "firewall check-remote") ||
+		strings.HasPrefix(cmd, "firewall refresh-npm-identity") {
+		return false
+	}
 	// First path segment only (e.g. "install <version>" → "install").
 	if i := strings.IndexByte(cmd, ' '); i >= 0 {
 		cmd = cmd[:i]
@@ -336,4 +396,43 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func parseSignVersionScriptsArgs(args []string) (versionDir string, signChanged bool) {
+	for _, a := range args {
+		if a == "--sign-changed" {
+			signChanged = true
+			continue
+		}
+		if strings.HasPrefix(a, "--") {
+			continue
+		}
+		if versionDir == "" {
+			versionDir = a
+		}
+	}
+	return versionDir, signChanged
+}
+
+func splitReshimArgs(args []string) (forward []string, readyEvent string) {
+	forward = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--sign-changed" {
+			continue
+		}
+		if a == "--parent-ready-event" {
+			if i+1 < len(args) {
+				readyEvent = args[i+1]
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(a, "--parent-ready-event=") {
+			readyEvent = strings.TrimPrefix(a, "--parent-ready-event=")
+			continue
+		}
+		forward = append(forward, a)
+	}
+	return forward, readyEvent
 }

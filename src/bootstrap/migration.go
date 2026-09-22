@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 
+	"nvm/legacy"
+
 	winreg "golang.org/x/sys/windows/registry"
 )
 
@@ -88,22 +90,125 @@ func removeLegacyCurrentUserEnv(dataRoot string) error {
 	}
 	defer key.Close()
 
-	nvmHome, _, valueErr := key.GetStringValue("NVM_HOME")
-	if valueErr != nil {
-		if valueErr == winreg.ErrNotExist {
+	changed := false
+
+	nvmHome, _, homeErr := key.GetStringValue("NVM_HOME")
+	if homeErr != nil && homeErr != winreg.ErrNotExist {
+		return fmt.Errorf("failed to read current-user NVM_HOME: %w", homeErr)
+	}
+	nvmSymlink, _, linkErr := key.GetStringValue("NVM_SYMLINK")
+	if linkErr != nil && linkErr != winreg.ErrNotExist {
+		return fmt.Errorf("failed to read current-user NVM_SYMLINK: %w", linkErr)
+	}
+
+	forceRemove := map[string]bool{}
+	if homeErr == nil && (valueReferencesPath(nvmHome, dataRoot) || looksLikeAuthorNvmHome(nvmHome)) {
+		if err := key.DeleteValue("NVM_HOME"); err != nil && err != winreg.ErrNotExist {
+			return fmt.Errorf("failed to delete current-user NVM_HOME: %w", err)
+		}
+		forceRemove[normalizePathMatch(nvmHome)] = true
+		forceRemove[strings.ToLower("%NVM_HOME%")] = true
+		changed = true
+	}
+	if linkErr == nil && (valueReferencesPath(nvmSymlink, dataRoot) || looksLikeLegacyNvmSymlink(nvmSymlink)) {
+		if err := key.DeleteValue("NVM_SYMLINK"); err != nil && err != winreg.ErrNotExist {
+			return fmt.Errorf("failed to delete current-user NVM_SYMLINK: %w", err)
+		}
+		forceRemove[normalizePathMatch(nvmSymlink)] = true
+		forceRemove[strings.ToLower("%NVM_SYMLINK%")] = true
+		changed = true
+	}
+
+	userPath, _, pathErr := key.GetStringValue("Path")
+	if pathErr != nil {
+		if pathErr == winreg.ErrNotExist {
+			if changed {
+				legacy.BroadcastEnvironmentChange()
+			}
 			return nil
 		}
-		return fmt.Errorf("failed to read current-user NVM_HOME: %w", valueErr)
-	}
-	if !valueReferencesPath(nvmHome, dataRoot) {
-		return nil
+		return fmt.Errorf("failed to read current-user Path: %w", pathErr)
 	}
 
-	if err := key.DeleteValue("NVM_HOME"); err != nil && err != winreg.ErrNotExist {
-		return fmt.Errorf("failed to delete current-user NVM_HOME: %w", err)
+	// Also strip community program-root PATH entries (keep .nodejs).
+	cleaned := filterUserPath(userPath, dataRoot, forceRemove)
+	if cleaned != userPath {
+		if err := key.SetExpandStringValue("Path", cleaned); err != nil {
+			return fmt.Errorf("failed to rewrite current-user Path: %w", err)
+		}
+		changed = true
 	}
-
+	if changed {
+		legacy.BroadcastEnvironmentChange()
+	}
 	return nil
+}
+
+// RemoveLegacyCurrentUserEnv clears leftover HKCU NVM_HOME/NVM_SYMLINK and community
+// program-root user PATH segments while keeping dataRoot\.nodejs. Used by MSI
+// impersonated install CA and first-launch bootstrap.
+func RemoveLegacyCurrentUserEnv(dataRoot string) error {
+	return removeLegacyCurrentUserEnv(dataRoot)
+}
+
+func looksLikeLegacyNvmSymlink(value string) bool {
+	norm := normalizePathMatch(value)
+	if norm == "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(value)
+	return strings.EqualFold(norm, `c:\nodejs`) ||
+		strings.EqualFold(trimmed, `%NVM_SYMLINK%`) ||
+		strings.HasSuffix(norm, `\author software\nvm\.link`) ||
+		strings.HasSuffix(norm, `\author software\nvm\.nodejs`)
+}
+
+func looksLikeAuthorNvmHome(value string) bool {
+	norm := normalizePathMatch(value)
+	if norm == "" {
+		return false
+	}
+	return strings.HasSuffix(norm, `\author software\nvm`)
+}
+
+// filterUserPath drops legacy NVM segments and the community program root for dataRoot
+// while keeping dataRoot\.nodejs.
+func filterUserPath(userPath, dataRoot string, forceRemove map[string]bool) string {
+	if forceRemove == nil {
+		forceRemove = map[string]bool{}
+	}
+	dataNorm := normalizePathMatch(dataRoot)
+	nodejsNorm := normalizePathMatch(filepath.Join(dataRoot, ".nodejs"))
+
+	segments := strings.Split(userPath, ";")
+	kept := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		trimmed := strings.TrimSpace(seg)
+		if trimmed == "" {
+			continue
+		}
+		norm := normalizePathMatch(trimmed)
+		expanded := normalizePathMatch(os.ExpandEnv(trimmed))
+
+		// Keep .nodejs shim path even when NVM_SYMLINK pointed at it.
+		if norm == nodejsNorm || expanded == nodejsNorm ||
+			strings.HasSuffix(norm, `\author software\nvm\.nodejs`) ||
+			strings.HasSuffix(expanded, `\author software\nvm\.nodejs`) {
+			kept = append(kept, seg)
+			continue
+		}
+		if forceRemove[norm] || forceRemove[expanded] {
+			continue
+		}
+		// Drop community program root (data root itself).
+		if (dataNorm != "" && (norm == dataNorm || expanded == dataNorm)) ||
+			strings.HasSuffix(norm, `\author software\nvm`) ||
+			strings.HasSuffix(expanded, `\author software\nvm`) {
+			continue
+		}
+		kept = append(kept, seg)
+	}
+	return strings.Join(kept, ";")
 }
 
 func removeLegacyPath(path string) error {
