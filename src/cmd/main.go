@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"nvm/bootstrap"
 	"nvm/commands"
+	"nvm/commands/firewall"
 	"nvm/installer"
 	"nvm/legacy"
 	"nvm/log"
@@ -33,6 +34,16 @@ var (
 func main() {
 	if len(os.Args) < 2 {
 		os.Args = append(os.Args, "--help")
+	}
+
+	// Toast / protocol activation (e.g. nvm://firewall?action=trust&...).
+	if strings.HasPrefix(strings.ToLower(os.Args[1]), "nvm://") {
+		settings.Load()
+		if err := firewall.HandleProtocolURI(os.Args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	}
 
 	switch os.Args[1] {
@@ -67,12 +78,29 @@ func main() {
 	case "--sign-version-scripts":
 		// Invoked by detached reshim after global package installs so proxy
 		// can trust newly written .cmd/.bat launchers without executing them first.
-		if len(os.Args) < 3 {
+		versionDir, wantSignChanged := parseSignVersionScriptsArgs(os.Args[2:])
+		if versionDir == "" {
 			fmt.Fprint(os.Stderr, "missing version directory for --sign-version-scripts\n")
 			os.Exit(1)
 		}
 		settings.Load()
-		if err := verifycache.SignVersionScripts(os.Args[2]); err != nil {
+		_ = os.Unsetenv("NVM_SIGN_CHANGED_MODULES")
+		if wantSignChanged && verifycache.ParentIsNvmReshim() {
+			verifycache.SetAllowSignChanged(true)
+		}
+		if err := verifycache.SignVersionScripts(versionDir); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	case "--sign-script":
+		// Force-resign one launcher after trust prompt (bypass TrustedModules gate).
+		if len(os.Args) < 3 {
+			fmt.Fprint(os.Stderr, "missing script path for --sign-script\n")
+			os.Exit(1)
+		}
+		settings.Load()
+		if err := verifycache.SignScript(os.Args[2]); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
 		}
@@ -82,10 +110,13 @@ func main() {
 		// ACL write window (RunWithRuntimeShimWrite); spawning reshim.exe alone
 		// cannot create hardlinks against the locked directory.
 		settings.Load()
-		args := []string{}
-		if len(os.Args) > 2 {
-			args = os.Args[2:]
+		args, readyEvent := splitReshimArgs(os.Args[2:])
+		_ = os.Unsetenv("NVM_SIGN_CHANGED_MODULES")
+		if verifycache.AuthorizeSignChangedFromParent() {
+			verifycache.SetAllowSignChanged(true)
+			args = append(args, "--sign-changed")
 		}
+		system.SignalNamedEvent(readyEvent)
 		if err := bootstrap.RunReshim(args...); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
@@ -205,9 +236,6 @@ func main() {
 	case "-v", "--version", "version":
 		settings.Load()
 		fmt.Printf("v%s\n", version)
-		if mark := communityEditionWatermark(); mark != "" {
-			fmt.Println(mark)
-		}
 		warnCommunityProgramRootIfNeeded()
 		return
 	case "-h", "--help", "help":
@@ -235,9 +263,6 @@ func main() {
 	warnCommunityProgramRootIfNeeded()
 
 	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
-	if mark := communityEditionWatermark(); mark != "" {
-		desc = fmt.Sprintf("%s\nv%s (%s Edition).\n%s.", description, version, license.Edition(), mark)
-	}
 
 	cli := kong.Parse(
 		root,
@@ -336,4 +361,43 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func parseSignVersionScriptsArgs(args []string) (versionDir string, signChanged bool) {
+	for _, a := range args {
+		if a == "--sign-changed" {
+			signChanged = true
+			continue
+		}
+		if strings.HasPrefix(a, "--") {
+			continue
+		}
+		if versionDir == "" {
+			versionDir = a
+		}
+	}
+	return versionDir, signChanged
+}
+
+func splitReshimArgs(args []string) (forward []string, readyEvent string) {
+	forward = make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--sign-changed" {
+			continue
+		}
+		if a == "--parent-ready-event" {
+			if i+1 < len(args) {
+				readyEvent = args[i+1]
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(a, "--parent-ready-event=") {
+			readyEvent = strings.TrimPrefix(a, "--parent-ready-event=")
+			continue
+		}
+		forward = append(forward, a)
+	}
+	return forward, readyEvent
 }

@@ -3,9 +3,13 @@ package log
 import (
 	"common/eventlog"
 	"common/license"
+	"common/system"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
 )
 
@@ -112,6 +116,84 @@ func Actor() string {
 	}
 
 	return "unknown"
+}
+
+// ActorSid returns the current user's security identifier (Windows: user.Current().Uid).
+func ActorSid() string {
+	if current, err := user.Current(); err == nil {
+		sid := strings.TrimSpace(current.Uid)
+		if sid != "" {
+			return sid
+		}
+	}
+	return "unknown"
+}
+
+// Hostname returns the local machine name for audit correlation.
+func Hostname() string {
+	name, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "unknown"
+	}
+	return name
+}
+
+// NewCorrelationID returns a short random hex identifier for correlating related audit events.
+func NewCorrelationID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// ParentProcess returns the immediate parent process executable file name.
+func ParentProcess() string {
+	return system.ParentProcessExecutable()
+}
+
+// ProjectName returns the nearest package.json "name" walking up from cwd.
+func ProjectName() string {
+	name, _ := projectNameAndPath()
+	return name
+}
+
+// ProjectPath returns the absolute path to the nearest package.json from cwd.
+func ProjectPath() string {
+	_, path := projectNameAndPath()
+	return path
+}
+
+func projectNameAndPath() (string, string) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", ""
+	}
+	for {
+		pkg := filepath.Join(dir, "package.json")
+		raw, err := os.ReadFile(pkg)
+		if err == nil {
+			var meta struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(raw, &meta) == nil {
+				name := strings.TrimSpace(meta.Name)
+				if name != "" {
+					return name, pkg
+				}
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", ""
 }
 
 // ExampleStructuredUsage demonstrates how to send a custom structured event.

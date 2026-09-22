@@ -4,6 +4,7 @@ import (
 	nvmhttp "common/http"
 	"common/inspect"
 	"common/license"
+	"common/modulefirewall"
 	"common/registry"
 	"common/settings"
 	"common/system"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,8 +44,9 @@ type Env struct {
 
 type installData struct {
 	Version    string            `json:"version"`
-	BuildTime  string            `json:"build_time"`
-	InstallDir string            `json:"path"`
+	BuildTime         string            `json:"build_time"`
+	BuildArchitecture string            `json:"build_architecture"`
+	InstallDir        string            `json:"path"`
 	Upgrade    string            `json:"upgrade"`
 	Variables  map[string]string `json:"variables"`
 }
@@ -77,6 +80,15 @@ type nodeRuntimeFlags struct {
 	EnforcementNote               string `json:"enforcement_note,omitempty"`
 }
 
+// packageManagersCfg reports npm / trust-firewall policy for `nvm env`.
+type packageManagersCfg struct {
+	NpmMirror                    []string `json:"npm_mirror"`
+	PackageManagerMismatchAction string   `json:"pm_mismatch_action"`
+	AutoInstallModules           []string `json:"auto_installed_modules"`
+	UntrustedModuleHandlerAction string   `json:"untrusted_module_handler_action"`
+	TrustedModules               string   `json:"trusted_modules"` // "ALL" or decimal count
+}
+
 type Computer struct {
 	MajorLabel      string   `json:"windows_major_label"`
 	MajorVersion    int64    `json:"windows_major_version"`
@@ -97,13 +109,14 @@ type Computer struct {
 }
 
 type data struct {
-	Installation      installData       `json:"installation"`
-	VersionManagement vmOps             `json:"operations"`
-	Node              nodeRuntimeFlags  `json:"node"`
-	Computer          Computer          `json:"localhost"`
-	ActiveLicense     *License          `json:"license,omitempty"`
-	ReportStatus      string            `json:"report_status,omitempty"`
-	Help              string            `json:"help_url,omitempty"`
+	Installation      installData        `json:"installation"`
+	VersionManagement vmOps              `json:"operations"`
+	Node              nodeRuntimeFlags   `json:"node"`
+	PackageManagers   packageManagersCfg `json:"package_managers"`
+	Computer          Computer           `json:"localhost"`
+	ActiveLicense     *License           `json:"license,omitempty"`
+	ReportStatus      string             `json:"report_status,omitempty"`
+	Help              string             `json:"help_url,omitempty"`
 }
 
 type License struct {
@@ -265,11 +278,17 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		nodeFlags.EnforcementNote = "Only enforced in shim mode"
 	}
 
+	buildArchitecture := "amd64"
+	if runtime.GOARCH == "arm64" {
+		buildArchitecture = "arm64"
+	}
+
 	out := data{
 		Installation: installData{
-			Version:    vars["version"],
-			BuildTime:  vars["buildTime"],
-			InstallDir: path(programRoot),
+			Version:           vars["version"],
+			BuildTime:         vars["buildTime"],
+			BuildArchitecture: buildArchitecture,
+			InstallDir:        path(programRoot),
 			Upgrade:    map[bool]string{true: "blocked", false: "allowed"}[cfg.DisableUpgrade],
 			// Variables: map[string]string{
 			// 	"NVM_HOME":      getUserEnvVar("NVM_HOME"),
@@ -295,6 +314,13 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			NpmModuleSizeMB:       moduleSizeBytes / (1024 * 1024),
 		},
 		Node: nodeFlags,
+		PackageManagers: packageManagersCfg{
+			NpmMirror:                    append([]string(nil), cfg.NpmMirror...),
+			PackageManagerMismatchAction: strings.TrimSpace(cfg.PackageManagerMismatchAction),
+			AutoInstallModules:           append([]string(nil), cfg.AutoInstallModuleList...),
+			UntrustedModuleHandlerAction: untrustedHandlerLabel(cfg.UntrustedModuleHandlerAction),
+			TrustedModules:               summarizeTrustedModules(cfg.TrustedModules),
+		},
 		Computer: Computer{
 			MajorLabel:     win_major_label,
 			MajorVersion:   int64(win_major_version.(uint64)),
@@ -377,7 +403,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	fmt.Fprintf(t, "%s%s Version\t: %s\n", indent(1), branch, out.Installation.Version)
 
 	// nvm build
-	fmt.Fprintf(t, "%s%s Build\t: %s\n", indent(1), branch, out.Installation.BuildTime)
+	fmt.Fprintf(t, "%s%s Build\t: %s (%s)\n", indent(1), branch, out.Installation.BuildTime, out.Installation.BuildArchitecture)
 
 	// nvm install root
 	hasActiveLicense := out.ActiveLicense != nil
@@ -489,6 +515,29 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		fmt.Fprintf(t, "%s%s Disallow eval/string execution\t: %s\n", indent(1), end, enabledLabel(out.Node.DisableEvalAndStringExecution))
 	}
 
+	fmt.Fprint(t, br)
+
+	// Package managers / trust firewall
+	fmt.Fprint(t, "Package Managers\t\n")
+	for i, mirror := range out.PackageManagers.NpmMirror {
+		if i == 0 {
+			fmt.Fprintf(t, "%s%s npm registry\t: %s\n", indent(1), branch, mirror)
+		} else {
+			fmt.Fprintf(t, "%s%s             \t  %s\n", indent(1), branch, mirror)
+		}
+	}
+	if len(out.PackageManagers.NpmMirror) == 0 {
+		fmt.Fprintf(t, "%s%s npm registry\t: (not set)\n", indent(1), branch)
+	}
+	fmt.Fprintf(t, "%s%s Mismatch action\t: %s\n", indent(1), branch, out.PackageManagers.PackageManagerMismatchAction)
+	autoMods := strings.Join(out.PackageManagers.AutoInstallModules, ", ")
+	if strings.TrimSpace(autoMods) == "" {
+		autoMods = "(none)"
+	}
+	fmt.Fprintf(t, "%s%s Auto-install modules\t: %s\n", indent(1), branch, autoMods)
+	fmt.Fprintf(t, "%s%s Untrusted module action\t: %s\n", indent(1), branch, out.PackageManagers.UntrustedModuleHandlerAction)
+	fmt.Fprintf(t, "%s%s Trusted modules\t: %s\n", indent(1), end, out.PackageManagers.TrustedModules)
+
 	// Identify EOL versions and those w%shich are supported by nvm
 
 	// Announcements
@@ -511,6 +560,65 @@ func enabledLabel(enabled bool) string {
 		return "Enabled"
 	}
 	return "Disabled"
+}
+
+func untrustedHandlerLabel(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "deny", "prompt", "allow":
+		return v
+	case "":
+		return "prompt"
+	default:
+		return v
+	}
+}
+
+// summarizeTrustedModules returns "ALL" when everything is trusted, otherwise
+// the count of positive (allow) TrustedModules patterns.
+func summarizeTrustedModules(entries []string) string {
+	rules := modulefirewall.NormalizeList(entries, modulefirewall.DefaultTrustedWhenEmpty)
+	if endpoint, ok := modulefirewall.ExtractHTTPSURL(rules); ok {
+		return endpoint
+	}
+
+	hasNotAll := false
+	hasAll := false
+	positive := 0
+	for _, raw := range rules {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		lower := strings.ToLower(entry)
+		negated := false
+		if strings.HasPrefix(lower, "not ") || strings.HasPrefix(lower, "not\t") {
+			negated = true
+			entry = strings.TrimSpace(entry[3:])
+		} else if strings.HasPrefix(entry, "!") {
+			negated = true
+			entry = strings.TrimSpace(entry[1:])
+		}
+		if entry == "" {
+			continue
+		}
+		if strings.EqualFold(entry, "all") {
+			if negated {
+				hasNotAll = true
+			} else {
+				hasAll = true
+			}
+			continue
+		}
+		if !negated {
+			positive++
+		}
+	}
+
+	if hasAll && !hasNotAll {
+		return "ALL"
+	}
+	return strconv.Itoa(positive)
 }
 
 func showDetail(t *tabwriter.Writer, problem *inspect.Problem) {

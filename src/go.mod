@@ -62,6 +62,7 @@ require (
 	common/resolver v1.0.0
 	common/settings v1.0.0
 	common/system v1.0.0
+	common/token v1.0.0
 	common/verify v1.0.0
 	common/verifycache v1.0.0
 	common/version_support v1.0.0
@@ -76,7 +77,6 @@ require (
 require (
 	common/cose v1.0.0 // indirect
 	common/proxy v1.0.0 // indirect
-	common/token v1.0.0 // indirect
 	common/urlguard v1.0.0 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
