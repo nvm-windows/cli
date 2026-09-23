@@ -577,7 +577,7 @@ func untrustedHandlerLabel(raw string) string {
 // summarizeTrustedModules returns "ALL" when everything is trusted, otherwise
 // the count of positive (allow) TrustedModules patterns.
 func summarizeTrustedModules(entries []string) string {
-	rules := modulefirewall.NormalizeList(entries, modulefirewall.DefaultTrustedWhenEmpty)
+	rules := modulefirewall.NormalizeTrustedModules(entries)
 	if endpoint, ok := modulefirewall.ExtractHTTPSURL(rules); ok {
 		return endpoint
 	}
