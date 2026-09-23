@@ -12,7 +12,7 @@ func TestSummarizeTrustedModules(t *testing.T) {
 		entries []string
 		want    string
 	}{
-		{name: "empty defaults to zero", entries: nil, want: "0"},
+		{name: "empty defaults to npm and npx", entries: nil, want: "2"},
 		{name: "not all alone", entries: []string{"NOT ALL"}, want: "0"},
 		{name: "all", entries: []string{"ALL"}, want: "ALL"},
 		{name: "exceptions", entries: []string{"NOT ALL", "opencode", "porthog"}, want: "2"},

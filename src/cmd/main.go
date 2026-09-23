@@ -75,6 +75,14 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--sign-installed-versions":
+		// Installer upgrade from 2.0.0: backfill script trust for every installs\v*.
+		settings.Load()
+		if err := verifycache.PrewarmVerifyCache(true); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--sign-version-scripts":
 		// Invoked by detached reshim after global package installs so proxy
 		// can trust newly written .cmd/.bat launchers without executing them first.
