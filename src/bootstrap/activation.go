@@ -21,12 +21,19 @@ var verifyActivationNode = func(path string) error {
 
 var logActivationBlocked = func(versionDir, nodePath, failureKind, detail string) {
 	log.ErrorStructured("node.security.activation_blocked", log.StructuredPayload{
-		"action":       "activation_blocked",
-		"detail":       detail,
-		"failure_kind": failureKind,
-		"node_path":    nodePath,
-		"source":       "link-mode",
-		"version_path": versionDir,
+		"action":           "activation_blocked",
+		"detail":           detail,
+		"failure_kind":     failureKind,
+		"node_path":        nodePath,
+		"source":           "link-mode",
+		"version_path":     versionDir,
+		"user":             log.Actor(),
+		"sid":              log.ActorSid(),
+		"hostname":         log.Hostname(),
+		"correlation_id":   log.NewCorrelationID(),
+		"parent_process":   log.ParentProcess(),
+		"project_name":     log.ProjectName(),
+		"project_path":     log.ProjectPath(),
 	}, activationBlockedEventCode)
 }
 

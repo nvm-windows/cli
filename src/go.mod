@@ -44,6 +44,8 @@ replace common/cose v1.0.0 => ../../common/cose
 
 replace common/license v1.0.0 => ../../common/licensing
 
+replace common/modulefirewall v1.0.0 => ../../common/modulefirewall
+
 require (
 	common/acl v1.0.0
 	common/config v1.0.0
@@ -53,16 +55,18 @@ require (
 	common/inspect v1.0.0
 	common/license v1.0.0
 	common/mirrorauth v1.0.0
+	common/modulefirewall v1.0.0
 	common/notify v1.0.0
 	common/preferences v1.0.0
 	common/registry v1.0.0
 	common/resolver v1.0.0
 	common/settings v1.0.0
 	common/system v1.0.0
+	common/token v1.0.0
 	common/verify v1.0.0
 	common/verifycache v1.0.0
 	common/version_support v1.0.0
-	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/alecthomas/kong v1.14.0
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/iancoleman/orderedmap v0.3.0
@@ -73,7 +77,6 @@ require (
 require (
 	common/cose v1.0.0 // indirect
 	common/proxy v1.0.0 // indirect
-	common/token v1.0.0 // indirect
 	common/urlguard v1.0.0 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
@@ -96,3 +99,4 @@ require (
 	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
+

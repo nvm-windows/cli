@@ -117,6 +117,17 @@ func ActivateVersion(version string) error {
 		go notify.Send(settings.AppId, "", msg)
 	}
 
+	log.LogStructured("nvm.version.activated", log.StructuredPayload{
+		"action":           "activated",
+		"version":          version,
+		"previous_version": lastVersion,
+		"mode":             mode,
+		"user":             log.Actor(),
+		"sid":              log.ActorSid(),
+		"hostname":         log.Hostname(),
+		"correlation_id":   log.NewCorrelationID(),
+	})
+
 	return nil
 }
 

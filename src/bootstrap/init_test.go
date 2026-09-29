@@ -368,8 +368,16 @@ func TestEnsureUserProfileInitializedCleansLegacyPayload(t *testing.T) {
 	createRegistryKey(t, legacyShellRegistrationBase+`\shell\open\command`, map[string]string{
 		"": `"` + legacyNvmExe + `" "%1"`,
 	})
+	nodejsPath := filepath.Join(root, ".nodejs")
 	createRegistryKey(t, `Environment`, map[string]string{
-		"NVM_HOME": root,
+		"NVM_HOME":    root,
+		"NVM_SYMLINK": nodejsPath,
+		"Path": strings.Join([]string{
+			`C:\Windows\system32`,
+			root,
+			nodejsPath,
+			`C:\Tools`,
+		}, ";"),
 	})
 
 	if err := EnsureUserProfileInitialized(); err != nil {
@@ -386,6 +394,11 @@ func TestEnsureUserProfileInitializedCleansLegacyPayload(t *testing.T) {
 	assertRegistryKeyMissing(t, legacySyncAppPathKey)
 	assertRegistryKeyMissing(t, legacyShellRegistrationBase+`\shell\open\command`)
 	assertRegistryValueMissing(t, `Environment`, "NVM_HOME")
+	assertRegistryValueMissing(t, `Environment`, "NVM_SYMLINK")
+	assertUserPathContains(t, `C:\Windows\system32`)
+	assertUserPathContains(t, nodejsPath)
+	assertUserPathContains(t, `C:\Tools`)
+	assertUserPathMissing(t, root)
 	if len(deletedTasks) != 1 || deletedTasks[0] != "NVM Sync" {
 		t.Fatalf("deleted tasks = %#v, want [\"NVM Sync\"]", deletedTasks)
 	}
@@ -684,6 +697,43 @@ func assertRegistryValueMissing(t *testing.T, keyPath, valueName string) {
 	_, _, err = key.GetStringValue(valueName)
 	if err != winreg.ErrNotExist {
 		t.Fatalf("GetStringValue(%q, %q) error = %v, want %v", keyPath, valueName, err, winreg.ErrNotExist)
+	}
+}
+
+func readUserPath(t *testing.T) string {
+	t.Helper()
+	key, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("OpenKey(Environment) error = %v", err)
+	}
+	defer key.Close()
+	value, _, err := key.GetStringValue("Path")
+	if err != nil {
+		t.Fatalf("GetStringValue(Path) error = %v", err)
+	}
+	return value
+}
+
+func assertUserPathContains(t *testing.T, segment string) {
+	t.Helper()
+	path := readUserPath(t)
+	normSeg := normalizePathMatch(segment)
+	for _, part := range strings.Split(path, ";") {
+		if normalizePathMatch(part) == normSeg {
+			return
+		}
+	}
+	t.Fatalf("user Path %q missing segment %q", path, segment)
+}
+
+func assertUserPathMissing(t *testing.T, segment string) {
+	t.Helper()
+	path := readUserPath(t)
+	normSeg := normalizePathMatch(segment)
+	for _, part := range strings.Split(path, ";") {
+		if normalizePathMatch(part) == normSeg {
+			t.Fatalf("user Path %q still contains segment %q", path, segment)
+		}
 	}
 }
 
