@@ -244,7 +244,6 @@ func main() {
 	case "-v", "--version", "version":
 		settings.Load()
 		fmt.Printf("v%s\n", version)
-		warnCommunityProgramRootIfNeeded()
 		return
 	case "-h", "--help", "help":
 		// Handled by kong after lightweight init (no shim/reshim/ARP).
@@ -268,7 +267,10 @@ func main() {
 	}
 
 	settings.Load()
-	warnCommunityProgramRootIfNeeded()
+	// Layout / license advisories only on help and env — not every command.
+	if metaHelp || strings.EqualFold(os.Args[1], "env") {
+		warnStartupAdvisoriesIfNeeded()
+	}
 
 	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
 
