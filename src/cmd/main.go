@@ -93,6 +93,24 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--retire-community-payload":
+		// Impersonated MSI CA: drop community nvm.exe/utils/.icons and the HKCU
+		// uninstall entry during install, not on first nvm launch.
+		settings.Load()
+		dataRoot, err := bootstrap.DataRoot()
+		if err != nil || dataRoot == "" {
+			local := os.Getenv("LOCALAPPDATA")
+			if local == "" {
+				fmt.Fprint(os.Stderr, "LOCALAPPDATA is empty; cannot retire community payload\n")
+				os.Exit(1)
+			}
+			dataRoot = filepath.Join(local, "Author Software", "nvm")
+		}
+		if err := bootstrap.RetireCommunityUserPayload(dataRoot); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--register-installed-versions":
 		// Invoked by the installer after migration to ensure all migrated
 		// versions are registered in Windows Apps the same way normal installs are.

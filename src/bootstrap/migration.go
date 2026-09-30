@@ -27,6 +27,13 @@ var (
 	deleteScheduledTask         = defaultScheduledTaskDelete
 )
 
+// RetireCommunityUserPayload removes the per-user community app payload and its
+// HKCU uninstall/App Paths/shell registrations. Node installs and runtime dirs stay.
+// No-op when this process is itself the LocalAppData community binary.
+func RetireCommunityUserPayload(dataRoot string) error {
+	return cleanupLegacyUserPayload(dataRoot)
+}
+
 func cleanupLegacyUserPayload(dataRoot string) error {
 	programRoot, err := ProgramRoot()
 	if err != nil {
