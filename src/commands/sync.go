@@ -3,8 +3,8 @@ package commands
 import (
 	"common/settings"
 	"fmt"
-	"nvm/constant"
 	"nvm/bootstrap"
+	"nvm/constant"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +12,7 @@ import (
 
 type Upgrade struct {
 	Check bool `flag:"check" help:"Check for updates without performing the upgrade."`
+	Force bool `flag:"force" help:"Upgrade without warning about processes that will be closed."`
 }
 
 func (s *Upgrade) Run() error {
@@ -35,6 +36,9 @@ func (s *Upgrade) Run() error {
 	if s.Check {
 		cmd.Args = append(cmd.Args, "--check")
 	}
+	if s.Force {
+		cmd.Args = append(cmd.Args, "--force")
+	}
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -49,6 +53,7 @@ type Doctor struct {
 	Autofix bool     `flag:"autofix" help:"Automatically fix issues when possible."`
 	List    bool     `flag:"list" help:"List all available checks without running them."`
 	Update  bool     `flag:"update" help:"Force sync utility asset update before running checks."`
+	Force   bool     `flag:"force" help:"When upgrading, do not warn about processes that will be closed."`
 	constant.FlagJSON
 }
 
@@ -67,6 +72,9 @@ func (c *Doctor) Run() error {
 	}
 	if c.Update {
 		args = append(args, "--update")
+	}
+	if c.Force {
+		args = append(args, "--force")
 	}
 	if c.JSON {
 		args = append(args, "--json")
