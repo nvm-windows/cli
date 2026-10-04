@@ -45,11 +45,11 @@ func cleanupLegacyUserPayload(dataRoot string) error {
 
 	// Per-user/community installs live under the data root. Never treat that live
 	// payload as leftover "legacy" files — deleting nvm.exe would Access-Deny the
-	// running binary and break bootstrap.
+	// running binary and break bootstrap. Also leave this install's PATH entry
+	// and NVM_HOME alone. removeLegacyCurrentUserEnv strips ...\Author Software\nvm
+	// so a certified Program Files install can take over; doing that here removes
+	// the only directory that contains nvm.exe.
 	if sameLegacyPath(programRoot, dataRoot) {
-		if err := removeLegacyCurrentUserEnv(dataRoot); err != nil {
-			return err
-		}
 		return nil
 	}
 
