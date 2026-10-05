@@ -37,6 +37,7 @@ var (
 type Env struct {
 	constant.FlagJSON
 	RelaxDeadlines constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
+	Deadlines      constant.DeadlineFlags  `embed:""`
 }
 
 type installData struct {
@@ -136,7 +137,7 @@ var (
 )
 
 func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
-	settings.UseRelax(e.RelaxDeadlines.Setting())
+	settings.UseCommandDeadlines(e.RelaxDeadlines.Setting(), e.Deadlines.Setting())
 	var spinner *status.Spinner
 	if !e.JSON {
 		spinner = status.NewSpinner("Analyzing environment")

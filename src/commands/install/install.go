@@ -19,11 +19,12 @@ type Install struct {
 	Debug          bool                    `flag:"debug" hidden:"true" help:"Write timing logs to the install directory for debugging."`
 	Insecure       bool                    `flag:"insecure" help:"Accept invalid TLS/SSL certs from download sources."`
 	RelaxDeadlines constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
+	Deadlines      constant.DeadlineFlags  `embed:""`
 	constant.ArgVersion
 }
 
 func (s *Install) Run(ctx *kong.Context) error {
-	settings.UseRelax(s.RelaxDeadlines.Setting())
+	settings.UseCommandDeadlines(s.RelaxDeadlines.Setting(), s.Deadlines.Setting())
 	cfg := settings.Global()
 
 	var cacheRoot string
