@@ -2,9 +2,12 @@ package installer
 
 import (
 	nvmhttp "common/http"
+	"common/settings"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"nvm/log"
 )
 
 func describeDownloadResultFailure(label, url string, result nvmhttp.DownloadResult) error {
@@ -36,6 +39,22 @@ func formatNodeMirrorDownloadFailure(version, archiveName string, mirrors []stri
 			version,
 			archiveName,
 			mirrorNote,
+		)
+	}
+	if nvmhttp.IsDeadline(lastErr) {
+		b := settings.ActiveNetworkBudgets().Download
+		log.LogNetworkDeadline("download", "", b.Milliseconds, b.Source)
+		note := "TimeoutDownloadMs " + b.Note()
+		if settings.ActiveNetworkBudgets().Verbose {
+			note = "phase=download " + note
+		}
+		return fmt.Errorf(
+			"failed to download Node.js v%s (%s) from %s (%s): %w",
+			version,
+			archiveName,
+			mirrorNote,
+			note,
+			lastErr,
 		)
 	}
 	return fmt.Errorf(

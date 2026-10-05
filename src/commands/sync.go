@@ -3,8 +3,8 @@ package commands
 import (
 	"common/settings"
 	"fmt"
-	"nvm/constant"
 	"nvm/bootstrap"
+	"nvm/constant"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,10 +45,14 @@ func (s *Upgrade) Run() error {
 }
 
 type Doctor struct {
-	Checks  []string `arg:"" optional:"" help:"Specific checks to run. If not specified, all checks will be run."`
-	Autofix bool     `flag:"autofix" help:"Automatically fix issues when possible."`
-	List    bool     `flag:"list" help:"List all available checks without running them."`
-	Update  bool     `flag:"update" help:"Force sync utility asset update before running checks."`
+	Checks           []string                `arg:"" optional:"" help:"Specific checks to run. If not specified, all checks will be run."`
+	Autofix          bool                    `flag:"autofix" help:"Automatically fix issues when possible."`
+	List             bool                    `flag:"list" help:"List all available checks without running them."`
+	Update           bool                    `flag:"update" help:"Force sync utility asset update before running checks."`
+	RelaxDeadlines   constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
+	MeasureDeadlines bool                    `flag:"measure-deadlines" help:"Time each download source and print min, average, and max."`
+	MeasureCount     int                     `flag:"measure-count" default:"3" help:"How many times to repeat each deadline measurement."`
+	AutoDeadlines    bool                    `flag:"auto-deadlines" help:"Measure deadlines and save HKCU values from the results."`
 	constant.FlagJSON
 }
 
@@ -67,6 +71,22 @@ func (c *Doctor) Run() error {
 	}
 	if c.Update {
 		args = append(args, "--update")
+	}
+	if c.RelaxDeadlines.Active() {
+		if c.RelaxDeadlines.Milliseconds() > 0 {
+			args = append(args, fmt.Sprintf("--relax-deadlines=%d", c.RelaxDeadlines.Milliseconds()))
+		} else {
+			args = append(args, "--relax-deadlines")
+		}
+	}
+	if c.MeasureDeadlines {
+		args = append(args, "--measure-deadlines")
+	}
+	if c.AutoDeadlines {
+		args = append(args, "--auto-deadlines")
+	}
+	if (c.MeasureDeadlines || c.AutoDeadlines) && c.MeasureCount > 0 {
+		args = append(args, "--measure-count", fmt.Sprintf("%d", c.MeasureCount))
 	}
 	if c.JSON {
 		args = append(args, "--json")
