@@ -15,6 +15,7 @@ import (
 	"nvm/bootstrap"
 	"nvm/commands/cache"
 	"nvm/constant"
+	"nvm/log"
 	"nvm/status"
 	"os"
 	"os/user"
@@ -33,22 +34,18 @@ var (
 	helpURL string = "https://docs.nvm-windows.com"
 )
 
-const remoteReachabilityTimeout = 1500 * time.Millisecond
-
-// Use common/http so Author mirrors (mirror.author.io) get Bearer access token.
-var reachabilityClient = nvmhttp.NewClient(remoteReachabilityTimeout)
-
 type Env struct {
 	constant.FlagJSON
+	RelaxDeadlines constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
 }
 
 type installData struct {
-	Version    string            `json:"version"`
+	Version           string            `json:"version"`
 	BuildTime         string            `json:"build_time"`
 	BuildArchitecture string            `json:"build_architecture"`
 	InstallDir        string            `json:"path"`
-	Upgrade    string            `json:"upgrade"`
-	Variables  map[string]string `json:"variables"`
+	Upgrade           string            `json:"upgrade"`
+	Variables         map[string]string `json:"variables"`
 }
 
 type vmOps struct {
@@ -69,6 +66,10 @@ type vmOps struct {
 	VersionsCacheRoot     string          `json:"cache_root"`
 	CachedVersionsCount   int             `json:"cache_count"`
 	CachedVersionsSizeMB  int64           `json:"cache_size_mb"`
+	TimeoutCatalog        string          `json:"timeout_catalog_ms"`
+	TimeoutCatalogMirror  string          `json:"timeout_catalog_mirror_ms"`
+	TimeoutReachability   string          `json:"timeout_reachability_ms"`
+	TimeoutDownload       string          `json:"timeout_download_ms"`
 }
 
 // nodeRuntimeFlags reports shim-enforced Node.js CLI security flags.
@@ -135,6 +136,7 @@ var (
 )
 
 func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
+	settings.UseRelax(e.RelaxDeadlines.Setting())
 	var spinner *status.Spinner
 	if !e.JSON {
 		spinner = status.NewSpinner("Analyzing environment")
@@ -249,6 +251,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 		}
 	}
 
+	budgets := settings.ActiveNetworkBudgets()
 	node_ping_results := runReachabilityChecks(cfg.NodeMirror, isNodeMirrorReachable)
 	npm_ping_results := runReachabilityChecks(cfg.NpmMirror, isNpmMirrorReachable)
 
@@ -289,7 +292,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			BuildTime:         vars["buildTime"],
 			BuildArchitecture: buildArchitecture,
 			InstallDir:        path(programRoot),
-			Upgrade:    map[bool]string{true: "blocked", false: "allowed"}[cfg.DisableUpgrade],
+			Upgrade:           map[bool]string{true: "blocked", false: "allowed"}[cfg.DisableUpgrade],
 			// Variables: map[string]string{
 			// 	"NVM_HOME":      getUserEnvVar("NVM_HOME"),
 			// 	"NVM_NODE_PATH": getUserEnvVar("NVM_NODE_PATH"),
@@ -312,6 +315,10 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			NpmGlobalModuleTotal:  moduleTotalCount,
 			NpmGlobalModuleUnique: moduleUniqueCount,
 			NpmModuleSizeMB:       moduleSizeBytes / (1024 * 1024),
+			TimeoutCatalog:        budgets.Catalog.Note(),
+			TimeoutCatalogMirror:  budgets.CatalogMirror.Note(),
+			TimeoutReachability:   budgets.Reachability.Note(),
+			TimeoutDownload:       budgets.Download.Note(),
 		},
 		Node: nodeFlags,
 		PackageManagers: packageManagersCfg{
@@ -453,10 +460,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	// Node Mirrors
 	fmt.Fprintf(t, "%s%s Download Sources\t\n", indent(1), branch)
 	for i, mirror := range out.VersionManagement.NodeMirror {
-		reachable := ""
-		if !out.VersionManagement.NodeMirrorPingResult[mirror] {
-			reachable = " (unreachable)"
-		}
+		reachable := unreachableNote(out.VersionManagement.NodeMirrorPingResult[mirror], out.VersionManagement.TimeoutReachability)
 
 		if i == 0 {
 			fmt.Fprintf(t, "%s%s%s %s Node.js\t: %s%s\n", indent(1), line, indent(1), branch, mirror, reachable)
@@ -467,10 +471,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 
 	// npm Mirrors
 	for i, mirror := range out.VersionManagement.NpmMirror {
-		reachable := ""
-		if !out.VersionManagement.NpmMirrorPingResult[mirror] {
-			reachable = " (unreachable)"
-		}
+		reachable := unreachableNote(out.VersionManagement.NpmMirrorPingResult[mirror], out.VersionManagement.TimeoutReachability)
 
 		if i == 0 {
 			fmt.Fprintf(t, "%s%s%s %s npm\t: %s%s\n", indent(1), line, indent(1), end, mirror, reachable)
@@ -478,6 +479,12 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			fmt.Fprintf(t, "%s%s%s %s      \t  %s%s\n", indent(1), line, indent(1), end, mirror, reachable)
 		}
 	}
+
+	fmt.Fprintf(t, "%s%s Network deadlines\t\n", indent(1), branch)
+	fmt.Fprintf(t, "%s%s%s %s TimeoutCatalogMs\t: %s\n", indent(1), line, indent(1), branch, out.VersionManagement.TimeoutCatalog)
+	fmt.Fprintf(t, "%s%s%s %s TimeoutCatalogMirrorMs\t: %s\n", indent(1), line, indent(1), branch, out.VersionManagement.TimeoutCatalogMirror)
+	fmt.Fprintf(t, "%s%s%s %s TimeoutReachabilityMs\t: %s\n", indent(1), line, indent(1), branch, out.VersionManagement.TimeoutReachability)
+	fmt.Fprintf(t, "%s%s%s %s TimeoutDownloadMs\t: %s\n", indent(1), line, indent(1), end, out.VersionManagement.TimeoutDownload)
 
 	fmt.Fprintf(t, "%s%s Installed Versions\t\n", indent(1), branch)
 
@@ -960,9 +967,33 @@ func runReachabilityChecks(mirrors []string, checker func(string) bool) map[stri
 	return results
 }
 
+func unreachableNote(reachable bool, budget string) string {
+	if reachable {
+		return ""
+	}
+	if strings.Contains(budget, settings.SourceCommandFlag) {
+		return " (unreachable; phase=reachability " + budget + ")"
+	}
+	return " (unreachable)"
+}
+
+func reachabilityClient() *nvmhttp.Client {
+	return nvmhttp.NewClient(settings.ActiveNetworkBudgets().Reachability.Duration())
+}
+
+func noteReachabilityDeadline(url string, err error) {
+	if !nvmhttp.IsDeadline(err) {
+		return
+	}
+	b := settings.ActiveNetworkBudgets().Reachability
+	log.LogNetworkDeadline("reachability", url, b.Milliseconds, b.Source)
+}
+
 func isNodeMirrorReachable(url string) bool {
-	res, err := reachabilityClient.Head(url + "/index.tab")
+	target := strings.TrimRight(url, "/") + "/index.tab"
+	res, err := reachabilityClient().Head(target)
 	if err != nil {
+		noteReachabilityDeadline(target, err)
 		return false
 	}
 	defer res.Body.Close()
@@ -975,8 +1006,10 @@ func isNodeMirrorReachable(url string) bool {
 }
 
 func isNpmMirrorReachable(url string) bool {
-	res, err := reachabilityClient.Get(url + "/-/ping")
+	target := strings.TrimRight(url, "/") + "/-/ping"
+	res, err := reachabilityClient().Get(target)
 	if err != nil {
+		noteReachabilityDeadline(target, err)
 		return false
 	}
 	defer res.Body.Close()

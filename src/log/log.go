@@ -17,6 +17,19 @@ import (
 // Callers can pass any JSON-marshalable value to LogStructured/WarnStructured/ErrorStructured.
 type StructuredPayload map[string]any
 
+// LogNetworkDeadline emits informational NVM4501 when structured logging is allowed.
+func LogNetworkDeadline(phase, url string, budgetMs int, source string) {
+	if !license.AllowsStructuredLogging() {
+		return
+	}
+	eventlog.LogStructured("network.deadline_exceeded", StructuredPayload{
+		"phase":     phase,
+		"url":       url,
+		"budget_ms": budgetMs,
+		"source":    source,
+	}, 4501)
+}
+
 func RegisterEventSource(appName string) error {
 	return eventlog.RegisterEventSource(appName)
 }
