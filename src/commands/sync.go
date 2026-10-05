@@ -50,6 +50,7 @@ type Doctor struct {
 	List             bool                    `flag:"list" help:"List all available checks without running them."`
 	Update           bool                    `flag:"update" help:"Force sync utility asset update before running checks."`
 	RelaxDeadlines   constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
+	Deadlines        constant.DeadlineFlags  `embed:""`
 	MeasureDeadlines bool                    `flag:"measure-deadlines" help:"Time each download source and print min, average, and max."`
 	MeasureCount     int                     `flag:"measure-count" default:"3" help:"How many times to repeat each deadline measurement."`
 	AutoDeadlines    bool                    `flag:"auto-deadlines" help:"Measure deadlines and save HKCU values from the results."`
@@ -79,6 +80,7 @@ func (c *Doctor) Run() error {
 			args = append(args, "--relax-deadlines")
 		}
 	}
+	args = append(args, c.Deadlines.Args()...)
 	if c.MeasureDeadlines {
 		args = append(args, "--measure-deadlines")
 	}
