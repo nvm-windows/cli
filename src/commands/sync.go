@@ -57,8 +57,8 @@ type Doctor struct {
 	RelaxDeadlines   constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
 	Deadlines        constant.DeadlineFlags  `embed:""`
 	MeasureDeadlines bool                    `flag:"measure-deadlines" help:"Time each download source and print min, average, and max."`
-	MeasureCount     int                     `flag:"measure-count" default:"3" help:"How many times to repeat each deadline measurement."`
-	AutoDeadlines    bool                    `flag:"auto-deadlines" help:"Measure deadlines and save HKCU values from the results."`
+	MeasureCount     int                     `flag:"measure-count" default:"3" help:"How many times to repeat each deadline measurement. Ignored with --auto-deadlines."`
+	AutoDeadlines    bool                    `flag:"auto-deadlines" help:"Run 59 attempts per download source and save the slowest sample as your deadlines."`
 	constant.FlagJSON
 }
 
