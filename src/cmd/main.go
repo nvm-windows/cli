@@ -320,7 +320,7 @@ func main() {
 		warnStartupAdvisoriesIfNeeded()
 	}
 
-	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
+	desc := fmt.Sprintf("%s\nv%s (%s).", description, version, versionEditionLabel(license.Edition()))
 
 	cli := kong.Parse(
 		root,
@@ -465,4 +465,13 @@ func splitReshimArgs(args []string) (forward []string, readyEvent string) {
 		forward = append(forward, a)
 	}
 	return forward, readyEvent
+}
+
+// versionEditionLabel is the parenthetical on help. Certified labels already
+// include that word. Community stays "Community Edition".
+func versionEditionLabel(edition string) string {
+	if strings.HasPrefix(edition, "Certified") {
+		return edition
+	}
+	return edition + " Edition"
 }
