@@ -6,6 +6,7 @@ import (
 	"common/fs"
 	"common/license"
 	"common/notify"
+	"common/resolver"
 	"common/settings"
 	"common/system"
 	"common/verifycache"
@@ -32,6 +33,7 @@ var (
 )
 
 func main() {
+	resolver.OnDeadline = log.LogNetworkDeadline
 	if len(os.Args) < 2 {
 		os.Args = append(os.Args, "--help")
 	}
