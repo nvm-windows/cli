@@ -449,8 +449,31 @@ func TestCleanupLegacyUserPayloadSkipsLivePerUserInstall(t *testing.T) {
 	createRegistryKey(t, legacyUserUninstallKeyPaths[0], map[string]string{
 		"InstallLocation": root,
 	})
+	var previousHome string
+	var hadPreviousHome bool
+	if envKey, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE); err == nil {
+		previousHome, _, err = envKey.GetStringValue("NVM_HOME")
+		hadPreviousHome = err == nil
+		envKey.Close()
+	}
 	createRegistryKey(t, `Environment`, map[string]string{
 		"NVM_HOME": root,
+	})
+	t.Cleanup(func() {
+		key, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.SET_VALUE)
+		if err != nil {
+			return
+		}
+		defer key.Close()
+		current, _, err := key.GetStringValue("NVM_HOME")
+		if err != nil || current != root {
+			return
+		}
+		if hadPreviousHome {
+			_ = key.SetStringValue("NVM_HOME", previousHome)
+			return
+		}
+		_ = key.DeleteValue("NVM_HOME")
 	})
 
 	if err := cleanupLegacyUserPayload(root); err != nil {
@@ -460,7 +483,18 @@ func TestCleanupLegacyUserPayloadSkipsLivePerUserInstall(t *testing.T) {
 	assertPathExists(t, liveNvmExe)
 	assertPathExists(t, liveSyncExe)
 	assertPathExists(t, filepath.Join(root, ".icons", "nvm.ico"))
-	assertRegistryValueMissing(t, `Environment`, "NVM_HOME")
+	key, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("OpenKey(Environment) error = %v", err)
+	}
+	home, _, err := key.GetStringValue("NVM_HOME")
+	key.Close()
+	if err != nil {
+		t.Fatalf("GetStringValue(NVM_HOME) error = %v", err)
+	}
+	if home != root {
+		t.Fatalf("NVM_HOME = %q, want live program root %q", home, root)
+	}
 	if _, err := winreg.OpenKey(winreg.CURRENT_USER, legacyUserUninstallKeyPaths[0], winreg.QUERY_VALUE); err != nil {
 		t.Fatalf("live uninstall key should remain, OpenKey error = %v", err)
 	}
