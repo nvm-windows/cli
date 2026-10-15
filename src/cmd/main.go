@@ -24,6 +24,10 @@ import (
 	"github.com/alecthomas/kong"
 )
 
+func init() {
+	verifycache.SetCertifiedVerifyKeyLogging(!license.IsCommunityBuild())
+}
+
 var (
 	name            string
 	version         string
@@ -144,7 +148,7 @@ func main() {
 			verifycache.SetAllowSignChanged(true)
 		}
 		if err := verifycache.SignVersionScripts(versionDir); err != nil {
-			fmt.Fprint(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 		return
@@ -156,7 +160,7 @@ func main() {
 		}
 		settings.Load()
 		if err := verifycache.SignScript(os.Args[2]); err != nil {
-			fmt.Fprint(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 		return
