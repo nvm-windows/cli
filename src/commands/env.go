@@ -106,6 +106,7 @@ type Computer struct {
 	Domain          string   `json:"domain"`
 	Username        string   `json:"username"`
 	UserID          string   `json:"user_id"`
+	Antivirus       string   `json:"antivirus"`
 	IPv6Enabled     bool     `json:"ipv6_enabled"`
 	IPv6Interfaces  []string `json:"ipv6_interfaces"`
 }
@@ -343,6 +344,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 			Domain:         userDomain,
 			Username:       userName,
 			UserID:         userID,
+			Antivirus:      system.AntivirusLabel(),
 			IPv6Enabled:    ipv6enabled,
 			IPv6Interfaces: ipv6interfaces,
 		},
@@ -382,6 +384,7 @@ func (e *Env) Run(ctx *kong.Context, vars kong.Vars) error {
 	fmt.Fprintf(t, "%s%s User ID\t: %s\n", indent(1), branch, out.Computer.UserID)
 	fmt.Fprintf(t, "%s%s Developer Mode\t: %s\n", indent(1), branch, map[bool]string{true: "Enabled", false: "Disabled"}[out.Computer.DeveloperMode])
 	fmt.Fprintf(t, "%s%s Administrator\t: %s\n", indent(1), branch, map[bool]string{true: "Yes", false: "No"}[out.Computer.Administrator])
+	fmt.Fprintf(t, "%s%s Antivirus\t: %s\n", indent(1), branch, out.Computer.Antivirus)
 	fmt.Fprintf(t, "%s%s Current Shell\t: %s\n", indent(1), branch, out.Computer.Shell)
 
 	// IPv6
