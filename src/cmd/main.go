@@ -285,6 +285,23 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--notify-official-node":
+		// 2.x upgrade leaves a pre-existing nodejs.org install in place.
+		if len(os.Args) < 3 || strings.TrimSpace(os.Args[2]) == "" {
+			fmt.Fprint(os.Stderr, "usage: nvm --notify-official-node <path>\n")
+			os.Exit(1)
+		}
+		nodePath := strings.TrimSpace(os.Args[2])
+		_ = notify.Register(settings.AppId, eventSourceName)
+		officialMsg := fmt.Sprintf(
+			"Uninstall the old Node.js at %s. NVM for Windows left it in place during this upgrade. Leaving it installed causes conflicts.",
+			nodePath,
+		)
+		if err := notify.Send(settings.AppId, "Old Node.js still installed", officialMsg); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--unregister-eventlog":
 		// Invoked by OSS uninstaller to support event log unregistration without needing to run the entire CLI uninstaller.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
