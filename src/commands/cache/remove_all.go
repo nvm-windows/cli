@@ -22,6 +22,19 @@ func (c *Clear) Run() error {
 		fmt.Fprintln(os.Stdout, "cleared versions cache.")
 	}
 
+	if err := os.RemoveAll(Store.Malware); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "failed to clear malware scan stamps: %v\n", err)
+	} else {
+		fmt.Fprintln(os.Stdout, "cleared malware scan stamps.")
+	}
+	if db, err := malwareDBPath(); err == nil {
+		if err := os.Remove(db); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "failed to clear malware definitions: %v\n", err)
+		} else {
+			fmt.Fprintln(os.Stdout, "cleared malware definitions.")
+		}
+	}
+
 	if mirrorauth.ClearCachedLicenseJWT() {
 		fmt.Fprintln(os.Stdout, "cleared mirror license JWT cache.")
 	} else {

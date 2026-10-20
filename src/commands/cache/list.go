@@ -59,6 +59,16 @@ func (c *List) Run() error {
 				Root:  e.path,
 				Files: []string{},
 			}
+			if e.name == "malware" {
+				if rows, err := malwareRows(); err == nil {
+					for _, row := range rows {
+						cj.Files = append(cj.Files, row[0])
+						cj.TotalFiles++
+					}
+				}
+				result[e.name] = cj
+				continue
+			}
 			dirEntries, err := os.ReadDir(e.path)
 			if err == nil {
 				for _, de := range dirEntries {
@@ -84,6 +94,21 @@ func (c *List) Run() error {
 	defer w.Flush()
 
 	for _, e := range sorted {
+		if e.name == "malware" {
+			rows, err := malwareRows()
+			if err != nil || len(rows) == 0 {
+				fmt.Fprintf(w, "%s\t: (empty)\n", e.label)
+				continue
+			}
+			for j, row := range rows {
+				if j == 0 {
+					fmt.Fprintf(w, "%s\t: %s\n", e.label, row[0])
+				} else {
+					fmt.Fprintf(w, "\t  %s\n", row[0])
+				}
+			}
+			continue
+		}
 		dirEntries, err := os.ReadDir(e.path)
 		if err != nil || len(dirEntries) == 0 {
 			fmt.Fprintf(w, "%s\t: (empty)\n", e.label)
