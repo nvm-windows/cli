@@ -8,6 +8,7 @@ import (
 	"nvm/commands/install"
 	"nvm/commands/license"
 	"nvm/commands/list"
+	"nvm/commands/malware"
 	"nvm/commands/use"
 
 	"github.com/alecthomas/kong"
@@ -18,7 +19,7 @@ type RootCommand struct {
 	InstallTypos install.Root  `cmd:"" aliases:"add,in,ins,inst,insta,instal,isnt,isnta,isntal,isntall" hidden:"true"`
 	Uninstall    Uninstall     `cmd:"uninstall" aliases:"rm,un" help:"Uninstall one or more ${node} versions."`
 	Use          use.Root      `cmd:"use" help:"Switch the default ${node} version."`
-	Pin Pin `cmd:"pin" help:"Pin project Node.js version (ex: write .nvmrc)."`
+	Pin          Pin           `cmd:"pin" help:"Pin project Node.js version (ex: write .nvmrc)."`
 	List         list.Root     `cmd:"list" aliases:"ls" help:"List the installed/available ${node} versions."`
 	ListRemote   list.Releases `cmd:"list-remote" aliases:"ls-remote" hidden:"true"`
 	Alias        alias.Root    `cmd:"alias" help:"Manage ${node} version aliases."`
@@ -28,6 +29,7 @@ type RootCommand struct {
 	Cache        cache.Root    `cmd:"cache" help:"View and manage the ${app} cache."`
 	Config       cfg.Root      `cmd:"config" aliases:"cfg" help:"View and manage the ${app} configuration."`
 	Firewall     firewall.Root `cmd:"firewall" aliases:"fw" help:"Manage NVM version/module/trust firewall policy."`
+	Malware      malware.Root  `cmd:"malware" hidden:"true" help:"Internal malware helpers."`
 	On           Toggle        `cmd:"on" help:"Manage Node.js with ${app}."`
 	Off          Toggle        `cmd:"off" help:"Stop managing Node.js with ${app}."`
 	Doctor       Doctor        `cmd:"doctor" help:"Detect and fix common ${app} issues." hidden:"true"`

@@ -14,6 +14,7 @@ import (
 	"nvm/bootstrap"
 	"nvm/commands"
 	"nvm/commands/firewall"
+	"nvm/commands/malware"
 	"nvm/installer"
 	"nvm/legacy"
 	"nvm/log"
@@ -45,7 +46,14 @@ func main() {
 	// Toast / protocol activation (e.g. nvm://firewall?action=trust&...).
 	if strings.HasPrefix(strings.ToLower(os.Args[1]), "nvm://") {
 		settings.Load()
-		if err := firewall.HandleProtocolURI(os.Args[1]); err != nil {
+		raw := os.Args[1]
+		var err error
+		if strings.Contains(strings.ToLower(raw), "nvm://malware") {
+			err = malware.HandleProtocolURI(raw)
+		} else {
+			err = firewall.HandleProtocolURI(raw)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
