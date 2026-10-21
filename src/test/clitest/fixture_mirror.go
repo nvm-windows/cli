@@ -95,6 +95,18 @@ func StartNodeMirrorFixture(t *testing.T, tabPath string) *httptest.Server {
 func (s *Sandbox) ApplyNodeMirrorFixture(t *testing.T, tabPath string) *httptest.Server {
 	s.t.Helper()
 
+	prevFixtures := os.Getenv("NVM_TEST_HTTP_FIXTURES")
+	if err := os.Setenv("NVM_TEST_HTTP_FIXTURES", "1"); err != nil {
+		t.Fatalf("Setenv(NVM_TEST_HTTP_FIXTURES) error = %v", err)
+	}
+	t.Cleanup(func() {
+		if prevFixtures == "" {
+			_ = os.Unsetenv("NVM_TEST_HTTP_FIXTURES")
+			return
+		}
+		_ = os.Setenv("NVM_TEST_HTTP_FIXTURES", prevFixtures)
+	})
+
 	srv := StartNodeMirrorFixture(t, tabPath)
 	if err := s.WriteSetting("node_mirror", srv.URL); err != nil {
 		t.Fatalf("WriteSetting(node_mirror) error = %v", err)

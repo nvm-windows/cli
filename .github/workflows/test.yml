@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-slim
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       has_changes: ${{ steps.compute.outputs.has_changes }}
       matrix: ${{ steps.compute.outputs.matrix }}
@@ -78,6 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      members: read
     steps:
       - name: Validate Team Membership For Sensitive Changes
         env:
@@ -123,11 +125,19 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
 
+      - name: Checkout common modules
+        shell: pwsh
+        run: |
+          $dest = Join-Path (Split-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) -Parent) "common"
+          if (-not (Test-Path (Join-Path $dest "settings\go.mod"))) {
+            git clone --depth 1 https://github.com/nvm-windows/common.git $dest
+          }
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ matrix.app }}/go.mod
-          cache-dependency-path: ${{ matrix.app }}/go.sum
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
 
       - name: Cache qgo binary
         uses: actions/cache@v5
@@ -151,13 +161,13 @@ jobs:
 
       - name: Run qgo test
         shell: pwsh
-        working-directory: ${{ matrix.app }}
+        working-directory: src
         run: |
           qgo test
 
       - name: Run go test (cli/src)
         shell: pwsh
-        working-directory: ${{ matrix.app }}/src
+        working-directory: src
         run: |
           go test -p 1 -timeout 3m ./...
 

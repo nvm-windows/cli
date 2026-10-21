@@ -20,6 +20,7 @@ func ReloadStore() {
 type cacheDir struct {
 	Metadata string `json:"metadata" label:"Metadata"`
 	Versions string `json:"versions" label:"Versions"`
+	Malware  string `json:"malware" label:"Malware"`
 }
 
 func load() cacheDir {
@@ -32,6 +33,7 @@ func load() cacheDir {
 	}
 	c.Metadata = filepath.Join(root, "metadata")
 	c.Versions = filepath.Join(root, "versions")
+	c.Malware = filepath.Join(root, "malware-scan")
 
 	return c
 }
@@ -69,6 +71,8 @@ func (c cacheDir) GetFiles(name string) ([]string, error) {
 		path = c.Metadata
 	case "versions":
 		path = c.Versions
+	case "malware":
+		return malwareFiles()
 	default:
 		return nil, fmt.Errorf("unknown cache name: %s", name)
 	}

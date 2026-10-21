@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	neturl "net/url"
 	"nvm/log"
 	"os"
@@ -55,6 +56,29 @@ func logRemoteTrustEvent(event string, code int, plain string, payload map[strin
 	default:
 		log.LogStructured(event, payload, code)
 	}
+}
+
+// remoteFailureText is the sentence after "NVM Firewall: ".
+// A live authority omits the URL. An unreachable host includes it.
+func remoteFailureText(res modulefirewall.RemoteResult, endpoint, source string) (text string, code int, exitCode int) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "your settings"
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if res.Unreachable {
+		return fmt.Sprintf("cannot reach %s (enforced by %s).", endpoint, source), CodeRemoteUnreachable, 2
+	}
+	switch res.Status {
+	case http.StatusUnauthorized:
+		return fmt.Sprintf("blocked by %s.", source), CodeRemoteUnauthorized, 1
+	case http.StatusForbidden:
+		return fmt.Sprintf("blocked by %s.", source), CodeModuleBlocked, 1
+	}
+	if res.Status != 0 {
+		return fmt.Sprintf("remote authority returned HTTP %d (enforced by %s).", res.Status, source), CodeRemoteFailed, 2
+	}
+	return fmt.Sprintf("cannot reach %s (enforced by %s).", endpoint, source), CodeRemoteFailed, 2
 }
 
 func firewallUA() string {
@@ -190,39 +214,31 @@ func (c *CheckRemote) Run() error {
 		res = modulefirewall.EvaluateRemoteRequest(url, pkgs, reqOpts)
 	}
 
-	if modulefirewall.RemoteTrustUnavailable(res) {
-		code := CodeRemoteFailed
-		if res.Unreachable {
-			code = CodeRemoteUnreachable
+	if !res.Allowed {
+		cfgName := "approved_modules"
+		if c.Global {
+			cfgName = "approved_global_modules"
 		}
-		msg := modulefirewall.FormatRemoteUserMessage(res)
-		logRemoteTrustEvent("firewall.remote_failed", code, "NVM Firewall: "+msg, map[string]any{
+		source := settings.EnforcementSource(cfgName)
+		text, code, exitCode := remoteFailureText(res, url, source)
+		event := "firewall.remote_failed"
+		if exitCode == 1 {
+			event = "firewall.remote_blocked"
+			if res.Status == http.StatusUnauthorized {
+				event = "firewall.remote_unauthorized"
+			}
+		}
+		logRemoteTrustEvent(event, code, "NVM Firewall: "+text, map[string]any{
 			"url":         url,
 			"error":       res.ErrorMsg,
 			"status":      res.Status,
 			"unreachable": res.Unreachable,
+			"source":      source,
 			"shim":        shim,
+			"blocks":      res.Blocks,
 		})
-		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", msg, code)
-		os.Exit(2)
-	}
-	if !res.Allowed {
-		code := CodeModuleBlocked
-		event := "firewall.remote_blocked"
-		if res.Status == 401 {
-			code = CodeRemoteUnauthorized
-			event = "firewall.remote_unauthorized"
-		}
-		msg := modulefirewall.FormatRemoteUserMessage(res)
-		logRemoteTrustEvent(event, code, "NVM Firewall: "+msg, map[string]any{
-			"url":    url,
-			"status": res.Status,
-			"blocks": res.Blocks,
-			"error":  res.ErrorMsg,
-			"shim":   shim,
-		})
-		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", msg, code)
-		if len(res.Blocks) > 0 {
+		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", text, code)
+		if exitCode == 1 && len(res.Blocks) > 0 {
 			lines := make([]string, 0, len(res.Blocks))
 			for _, b := range res.Blocks {
 				line := b.Name
@@ -233,7 +249,7 @@ func (c *CheckRemote) Run() error {
 			}
 			modulefirewall.FormatHumanList(os.Stderr, lines)
 		}
-		os.Exit(1)
+		os.Exit(exitCode)
 	}
 	logRemoteTrustEvent("firewall.remote_allowed", CodeRemoteAllowed, "NVM Firewall: remote policy allowed", map[string]any{
 		"url":    url,
@@ -298,51 +314,31 @@ func (c *CheckRemoteTrust) Run() error {
 		return nil
 	}
 
-	if res.RemoteQueried && modulefirewall.RemoteTrustUnavailable(res.Remote) {
-		code := CodeRemoteFailed
-		if res.Remote.Unreachable {
-			code = CodeRemoteUnreachable
+	if res.RemoteQueried && !res.Remote.Allowed {
+		source := settings.EnforcementSource("trusted_modules")
+		text, code, exitCode := remoteFailureText(res.Remote, endpoint, source)
+		event := "firewall.remote_trust_unavailable"
+		if exitCode == 1 {
+			event = "firewall.remote_blocked"
+			if res.Remote.Status == http.StatusUnauthorized {
+				event = "firewall.remote_unauthorized"
+			}
 		}
-		msg := res.Message
-		if strings.TrimSpace(msg) == "" {
-			msg = modulefirewall.FormatRemoteUserMessage(res.Remote)
-		}
-		logRemoteTrustEvent("firewall.remote_trust_unavailable", code, "NVM Firewall: "+msg, map[string]any{
-			"error":       msg,
+		logRemoteTrustEvent(event, code, "NVM Firewall: "+text, map[string]any{
+			"error":       text,
 			"status":      res.Remote.Status,
 			"detail":      res.Remote.ErrorMsg,
 			"unreachable": res.Remote.Unreachable,
+			"source":      source,
 			"modules":     packageNames(res.Untrusted),
 			"shim":        shim,
 		})
-		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", msg, code)
-		os.Exit(2)
+		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", text, code)
+		os.Exit(exitCode)
 		return nil
 	}
 	if res.Message != "" {
 		fmt.Fprintf(os.Stderr, "NVM Firewall: %s\n", res.Message)
-	}
-	if res.RemoteQueried && res.Remote.Status == 401 {
-		msg := modulefirewall.FormatRemoteUserMessage(res.Remote)
-		logRemoteTrustEvent("firewall.remote_unauthorized", CodeRemoteUnauthorized, "NVM Firewall: "+msg, map[string]any{
-			"status":  401,
-			"modules": packageNames(res.Untrusted),
-			"error":   msg,
-			"shim":    shim,
-		})
-		fmt.Fprintf(os.Stderr, "NVM Firewall: %s (NVM%d)\n", msg, CodeRemoteUnauthorized)
-		os.Exit(1)
-		return nil
-	}
-	if res.RemoteQueried && res.Remote.Status == 403 {
-		logRemoteTrustEvent("firewall.remote_blocked", CodeModuleBlocked, "NVM Firewall: blocked by remote policy", map[string]any{
-			"status":  403,
-			"modules": packageNames(res.Untrusted),
-			"error":   res.Message,
-			"shim":    shim,
-		})
-		os.Exit(1)
-		return nil
 	}
 	lines := make([]string, 0, len(res.Untrusted))
 	for _, u := range res.Untrusted {

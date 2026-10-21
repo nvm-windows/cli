@@ -6,6 +6,7 @@ import (
 	"common/fs"
 	"common/license"
 	"common/notify"
+	"common/resolver"
 	"common/settings"
 	"common/system"
 	"common/verifycache"
@@ -13,6 +14,7 @@ import (
 	"nvm/bootstrap"
 	"nvm/commands"
 	"nvm/commands/firewall"
+	"nvm/commands/malware"
 	"nvm/installer"
 	"nvm/legacy"
 	"nvm/log"
@@ -23,6 +25,10 @@ import (
 	"github.com/alecthomas/kong"
 )
 
+func init() {
+	verifycache.SetCertifiedVerifyKeyLogging(!license.IsCommunityBuild())
+}
+
 var (
 	name            string
 	version         string
@@ -32,6 +38,7 @@ var (
 )
 
 func main() {
+	resolver.OnDeadline = log.LogNetworkDeadline
 	if len(os.Args) < 2 {
 		os.Args = append(os.Args, "--help")
 	}
@@ -39,7 +46,14 @@ func main() {
 	// Toast / protocol activation (e.g. nvm://firewall?action=trust&...).
 	if strings.HasPrefix(strings.ToLower(os.Args[1]), "nvm://") {
 		settings.Load()
-		if err := firewall.HandleProtocolURI(os.Args[1]); err != nil {
+		raw := os.Args[1]
+		var err error
+		if strings.Contains(strings.ToLower(raw), "nvm://malware") {
+			err = malware.HandleProtocolURI(raw)
+		} else {
+			err = firewall.HandleProtocolURI(raw)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
@@ -93,6 +107,24 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--retire-community-payload":
+		// Impersonated MSI CA: drop community nvm.exe/utils/.icons and the HKCU
+		// uninstall entry during install, not on first nvm launch.
+		settings.Load()
+		dataRoot, err := bootstrap.DataRoot()
+		if err != nil || dataRoot == "" {
+			local := os.Getenv("LOCALAPPDATA")
+			if local == "" {
+				fmt.Fprint(os.Stderr, "LOCALAPPDATA is empty; cannot retire community payload\n")
+				os.Exit(1)
+			}
+			dataRoot = filepath.Join(local, "Author Software", "nvm")
+		}
+		if err := bootstrap.RetireCommunityUserPayload(dataRoot); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--register-installed-versions":
 		// Invoked by the installer after migration to ensure all migrated
 		// versions are registered in Windows Apps the same way normal installs are.
@@ -124,7 +156,7 @@ func main() {
 			verifycache.SetAllowSignChanged(true)
 		}
 		if err := verifycache.SignVersionScripts(versionDir); err != nil {
-			fmt.Fprint(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 		return
@@ -136,7 +168,7 @@ func main() {
 		}
 		settings.Load()
 		if err := verifycache.SignScript(os.Args[2]); err != nil {
-			fmt.Fprint(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 		return
@@ -261,6 +293,23 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--notify-official-node":
+		// 2.x upgrade leaves a pre-existing nodejs.org install in place.
+		if len(os.Args) < 3 || strings.TrimSpace(os.Args[2]) == "" {
+			fmt.Fprint(os.Stderr, "usage: nvm --notify-official-node <path>\n")
+			os.Exit(1)
+		}
+		nodePath := strings.TrimSpace(os.Args[2])
+		_ = notify.Register(settings.AppId, eventSourceName)
+		officialMsg := fmt.Sprintf(
+			"Uninstall the old Node.js at %s. NVM for Windows left it in place during this upgrade. Leaving it installed causes conflicts.",
+			nodePath,
+		)
+		if err := notify.Send(settings.AppId, "Old Node.js still installed", officialMsg); err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
 	case "--unregister-eventlog":
 		// Invoked by OSS uninstaller to support event log unregistration without needing to run the entire CLI uninstaller.
 		if err := log.UnregisterEventSource(eventSourceName); err != nil {
@@ -300,7 +349,7 @@ func main() {
 		warnStartupAdvisoriesIfNeeded()
 	}
 
-	desc := fmt.Sprintf("%s\nv%s (%s Edition).", description, version, license.Edition())
+	desc := fmt.Sprintf("%s\nv%s (%s).", description, version, versionEditionLabel(license.Edition()))
 
 	cli := kong.Parse(
 		root,
@@ -445,4 +494,13 @@ func splitReshimArgs(args []string) (forward []string, readyEvent string) {
 		forward = append(forward, a)
 	}
 	return forward, readyEvent
+}
+
+// versionEditionLabel is the parenthetical on help. Certified labels already
+// include that word. Community stays "Community Edition".
+func versionEditionLabel(edition string) string {
+	if strings.HasPrefix(edition, "Certified") {
+		return edition
+	}
+	return edition + " Edition"
 }
