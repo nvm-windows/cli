@@ -91,6 +91,7 @@ func EnsureUserProfileInitialized() error {
 		if err := MaintainShimDirectory(); err != nil {
 			fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
 		}
+		MaybeRemoveStaleCommunityIdentity()
 		return nil
 	}
 

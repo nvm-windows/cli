@@ -172,6 +172,7 @@ func (c *Pin) Run() error {
 		msg := fmt.Sprintf("Successfully pinned %s Node.js engine to Node.js v%s (with npm v%s)", c.File, node_version, npm_version)
 		fmt.Println(msg)
 		if !system.IsAppInForeground() {
+			// Critical activity toast: no collection (reserved nvm.activity).
 			go notify.Send(settings.AppId, "", msg)
 		}
 
@@ -183,6 +184,7 @@ func (c *Pin) Run() error {
 		msg := fmt.Sprintf("Successfully pinned %s Node.js version to v%s", c.File, node_version)
 		fmt.Println(msg)
 		if !system.IsAppInForeground() {
+			// Critical activity toast: no collection (reserved nvm.activity).
 			go notify.Send(settings.AppId, "", msg)
 		}
 	}

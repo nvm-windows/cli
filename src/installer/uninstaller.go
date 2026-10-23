@@ -109,6 +109,7 @@ func Uninstall(cfg UninstallConfig) error {
 
 	// Apps launches with no console — always toast so the user gets feedback.
 	if len(notifyMsgs) > 0 && (cfg.FromApps || !system.IsAppInForeground()) {
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go notify.Send(settings.AppId, "", strings.Join(notifyMsgs, "; "))
 	}
 
