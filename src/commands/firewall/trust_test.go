@@ -37,6 +37,34 @@ func TestEntryMatchesRemove(t *testing.T) {
 	}
 }
 
+func TestTrustNoAnswerMessage(t *testing.T) {
+	got := trustNoAnswerMessage("opencode", "toast timeout")
+	want := "No trust answer for 'opencode' (toast timeout). NVM moved on. If you trust this: nvm firewall trust module opencode"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestLauncherStem(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"opencode", "opencode"},
+		{"  opencode  ", "opencode"},
+		{"ALL", ""},
+		{"NOT ALL", ""},
+		{"!opencode", ""},
+		{"https://policy.example/trust", ""},
+		{"@org/*", ""},
+		{`C:\tools\opencode`, "opencode"},
+	}
+	for _, tt := range tests {
+		if got := launcherStem(tt.in); got != tt.want {
+			t.Fatalf("launcherStem(%q)=%q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestStripNegation(t *testing.T) {
 	if got := stripNegation("NOT eslint"); got != "eslint" {
 		t.Fatalf("got %q", got)
