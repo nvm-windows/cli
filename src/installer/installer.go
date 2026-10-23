@@ -27,7 +27,9 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"common/acl"
+	"common/malwaredb"
 	"common/notify"
+	"nvm/bootstrap"
 	"nvm/log"
 )
 
@@ -143,6 +145,8 @@ func Install(cfg InstallConfig) error {
 			status.Alert(fmt.Errorf("reshim warning: %v", err))
 		}
 	}
+
+	seedMalwareDefinitions(status)
 
 	status.Done()
 	if failures.Load() > 0 {
@@ -625,6 +629,23 @@ func allowInsecureDownloads(cfg InstallConfig) bool {
 		}
 	}
 	return cfg.AllowInsecure
+}
+
+func seedMalwareDefinitions(status *Status) {
+	root, err := bootstrap.DataRoot()
+	if err != nil || root == "" {
+		return
+	}
+	if _, err := os.Stat(filepath.Join(root, "malware.db")); err == nil {
+		return
+	}
+	_, err = malwaredb.Update(malwaredb.UpdateOptions{
+		Root:    root,
+		License: malwaredb.LicenseHeader(),
+	})
+	if err != nil {
+		status.Alert(fmt.Errorf("malware definitions not downloaded: %v", err))
+	}
 }
 
 func getRoot(version string) string {
