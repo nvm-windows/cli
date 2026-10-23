@@ -546,6 +546,67 @@ func TestResetAll_PreservesRoot(t *testing.T) {
 	}
 }
 
+func captureStderr(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+
+	oldStderr := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() failed: %v", err)
+	}
+	os.Stderr = writer
+
+	errCh := make(chan error, 1)
+	var buffer bytes.Buffer
+	go func() {
+		_, copyErr := io.Copy(&buffer, reader)
+		errCh <- copyErr
+	}()
+
+	runErr := fn()
+	writer.Close()
+	os.Stderr = oldStderr
+	copyErr := <-errCh
+	reader.Close()
+	if copyErr != nil {
+		t.Fatalf("failed capturing stderr: %v", copyErr)
+	}
+
+	return buffer.String(), runErr
+}
+
+func TestSet_SkipMalwareChecksWarns(t *testing.T) {
+	bindTestRegistry(t)
+
+	out, err := captureStderr(t, func() error {
+		return runSetCfg(t, "skip_malware_checks=true")
+	})
+	if err != nil {
+		t.Fatalf("skip_malware_checks=true: %v", err)
+	}
+	if got := getSetting(t, "skip_malware_checks"); got != true {
+		t.Fatalf("skip_malware_checks: expected true, got %v", got)
+	}
+	wantOff := "Your system is no longer attempting to block malicious package installations"
+	if !strings.Contains(out, wantOff) {
+		t.Fatalf("skip on stderr = %q, want %q", out, wantOff)
+	}
+
+	out, err = captureStderr(t, func() error {
+		return runSetCfg(t, "skip_malware_checks=false")
+	})
+	if err != nil {
+		t.Fatalf("skip_malware_checks=false: %v", err)
+	}
+	if got := getSetting(t, "skip_malware_checks"); got != false {
+		t.Fatalf("skip_malware_checks: expected false, got %v", got)
+	}
+	wantOn := "Your system is now attempting to block malicious package installations"
+	if !strings.Contains(out, wantOn) {
+		t.Fatalf("skip off stderr = %q, want %q", out, wantOn)
+	}
+}
+
 func TestResetAll_SkipsBlockedKeys(t *testing.T) {
 	bindTestRegistry(t)
 	root := filepath.Join(os.TempDir(), "nvm_config_reset_all_blocked")
