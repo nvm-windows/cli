@@ -40,6 +40,8 @@ replace common/mirrorauth v1.0.0 => ../../common/mirrorauth
 
 replace common/token v1.0.0 => ../../common/token
 
+replace common/malwaredb v1.0.0 => ../../common/malwaredb
+
 replace common/cose v1.0.0 => ../../common/cose
 
 replace common/license v1.0.0 => ../../common/licensing
@@ -54,6 +56,7 @@ require (
 	common/http v1.0.0
 	common/inspect v1.0.0
 	common/license v1.0.0
+	common/malwaredb v1.0.0
 	common/mirrorauth v1.0.0
 	common/modulefirewall v1.0.0
 	common/notify v1.0.0

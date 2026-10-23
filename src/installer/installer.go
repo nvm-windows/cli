@@ -27,8 +27,11 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"common/acl"
+	"common/malwaredb"
 	"common/notify"
+	"nvm/bootstrap"
 	"nvm/log"
+	"nvm/prompt"
 )
 
 type InstallConfig struct {
@@ -142,6 +145,10 @@ func Install(cfg InstallConfig) error {
 		if err := reshim(); err != nil {
 			status.Alert(fmt.Errorf("reshim warning: %v", err))
 		}
+	}
+
+	if err := seedMalwareDefinitions(status); err != nil {
+		return err
 	}
 
 	status.Done()
@@ -625,6 +632,35 @@ func allowInsecureDownloads(cfg InstallConfig) bool {
 		}
 	}
 	return cfg.AllowInsecure
+}
+
+func seedMalwareDefinitions(status *Status) error {
+	root, err := bootstrap.DataRoot()
+	if err != nil || root == "" {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(root, "malware.db")); err == nil {
+		return nil
+	}
+	_, err = malwaredb.Update(malwaredb.UpdateOptions{
+		Root:    root,
+		License: malwaredb.LicenseHeader(),
+	})
+	if err == nil {
+		return nil
+	}
+	status.Alert(fmt.Errorf("malware definitions not downloaded: %v", err))
+	if !system.IsAppInForeground() {
+		return nil
+	}
+	ok, confirmErr := prompt.Confirm("Malicious package definitions could not be acquired. Package installs will be blocked until definitions download. Continue?", "n")
+	if confirmErr != nil {
+		return confirmErr
+	}
+	if !ok {
+		return fmt.Errorf("malware definitions not downloaded: %v", err)
+	}
+	return nil
 }
 
 func getRoot(version string) string {

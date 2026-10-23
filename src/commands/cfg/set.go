@@ -99,6 +99,9 @@ func (s *Set) Run() error {
 		}
 
 		log.LogConfigurationChanged(key, newValue, oldValue, log.OutcomeSucceeded, "")
+		if key == "skip_malware_checks" {
+			warnSkipMalwareChecks(value)
+		}
 	}
 
 	if len(errs) > 0 {
@@ -150,6 +153,24 @@ func displayValue(name string, value interface{}) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+func warnSkipMalwareChecks(value string) {
+	skip := false
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		skip = true
+	case "0", "false", "no", "off":
+		skip = false
+	default:
+		return
+	}
+	msg := "Your system is now attempting to block malicious package installations"
+	if skip {
+		msg = "Your system is no longer attempting to block malicious package installations"
+	}
+	log.Warn(msg)
+	fmt.Fprintln(os.Stderr, msg)
 }
 
 func setAnnouncements(enabled bool) error {
