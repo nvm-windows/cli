@@ -96,12 +96,12 @@ type DenyModule struct {
 
 type TrustModule struct {
 	List TrustModuleList `cmd:"list" aliases:"ls" help:"List trusted modules."`
-	Add  TrustModuleAdd  `cmd:"add" default:"withargs" help:"Add modules to TrustedModules (self-update auto-reshim allow list)."`
+	Add  TrustModuleAdd  `cmd:"add" default:"withargs" help:"Add modules to TrustedModules and re-sign their launchers."`
 }
 
 type TrustModuleAdd struct {
 	Machine bool     `name:"machine" help:"Trust modules for the entire machine."`
-	Entries []string `arg:"" name:"entry" help:"Module patterns to trust for auto-reshim."`
+	Entries []string `arg:"" name:"entry" help:"Module patterns to trust. Re-signs matching launchers; a separate nvm reshim is not required."`
 }
 
 type TrustModuleList struct {
@@ -573,7 +573,11 @@ func (t *TrustModuleAdd) Run() error {
 	if len(t.Entries) == 0 {
 		return fmt.Errorf("entry required (or use: nvm firewall trust module list)")
 	}
-	return appendTrusted(t.Entries, t.Machine)
+	if err := appendTrusted(t.Entries, t.Machine); err != nil {
+		return err
+	}
+	afterTrustHook(t.Entries)
+	return nil
 }
 
 func (t *TrustModuleList) Run() error {

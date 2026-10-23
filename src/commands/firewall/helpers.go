@@ -349,7 +349,50 @@ func (c *CheckRemoteTrust) Run() error {
 	return nil
 }
 
-// PromptTrust asks whether to trust a module after a self-update.
+// promptTimeoutExit is returned when the trust prompt gets no answer
+// (toast timeout or no console). Distinct from 1 (explicit decline).
+const promptTimeoutExit = 2
+
+// afterTrustHook re-signs launchers and reshims after TrustedModules is updated.
+// Windows sets this in init; other platforms leave it as a no-op.
+var afterTrustHook = func(entries []string) {}
+
+func launcherStem(entry string) string {
+	e := strings.TrimSpace(entry)
+	if e == "" {
+		return ""
+	}
+	upper := strings.ToUpper(e)
+	if upper == "ALL" || strings.HasPrefix(upper, "NOT ") || strings.HasPrefix(e, "!") {
+		return ""
+	}
+	if strings.Contains(e, "://") || strings.ContainsAny(e, "*?") {
+		return ""
+	}
+	if i := strings.LastIndexAny(e, `/\`); i >= 0 {
+		e = e[i+1:]
+	}
+	return strings.TrimSpace(e)
+}
+
+// trustNoAnswerMessage is the console and silent-toast text when a prompt
+// times out or there is no console.
+func trustNoAnswerMessage(name, why string) string {
+	name = strings.TrimSpace(name)
+	why = strings.TrimSpace(why)
+	if why == "" {
+		why = "no answer"
+	}
+	return fmt.Sprintf("No trust answer for '%s' (%s). NVM moved on. If you trust this: nvm firewall trust module %s", name, why, name)
+}
+
+func notifyTrustNoAnswer(name, why string) {
+	msg := trustNoAnswerMessage(name, why)
+	fmt.Fprintln(os.Stderr, msg)
+	_ = notify.Send(settings.AppId, "NVM Firewall", msg)
+}
+
+// PromptTrust asks whether to trust a module on a blocked launch.
 // Foreground console: interactive y/N only (no toast).
 // Background: native toast with Trust / Cancel (protocol actions); wait for answer.
 type PromptTrust struct {
@@ -403,13 +446,13 @@ func logUntrustedModuleChanged(module, outcome, handler, via string) {
 }
 
 func promptTrustConsole(name string) error {
-	msg := fmt.Sprintf("Untrusted module '%s' changed after running. Do you trust this module?", name)
+	msg := fmt.Sprintf("Untrusted module '%s' changed. Do you trust this module?", name)
 	fmt.Fprintf(os.Stderr, "NVM Firewall: %s [y/N]: ", msg)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s is not trusted\n", name)
-		os.Exit(1)
+		notifyTrustNoAnswer(name, "no console")
+		os.Exit(promptTimeoutExit)
 		return nil
 	}
 	line = strings.TrimSpace(line)
@@ -436,7 +479,7 @@ func promptTrustToast(name string) error {
 	}
 	defer os.Remove(rspPath)
 
-	msg := fmt.Sprintf("Untrusted module '%s' changed after running. Do you trust this module?", name)
+	msg := fmt.Sprintf("Untrusted module '%s' changed. Do you trust this module?", name)
 	_ = notify.Send(
 		settings.AppId,
 		"NVM Firewall",
@@ -467,8 +510,8 @@ func promptTrustToast(name string) error {
 		time.Sleep(400 * time.Millisecond)
 	}
 
-	fmt.Fprintf(os.Stderr, "Trust prompt timed out for %s; reshim skipped.\n", name)
-	os.Exit(1)
+	notifyTrustNoAnswer(name, "toast timeout")
+	os.Exit(promptTimeoutExit)
 	return nil
 }
 
