@@ -81,25 +81,24 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Validate Team Membership For Sensitive Changes
+      - name: Validate Same-Repo Or Core Team For Sensitive Changes
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || secrets.GITHUB_TOKEN }}
           ORG: ${{ github.repository_owner }}
           TEAM_SLUG: core
           ACTOR: ${{ github.event.pull_request.user.login }}
-          ASSOC: ${{ github.event.pull_request.author_association }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          # GITHUB_TOKEN is a repo installation token, not the pusher's PAT.
-          # It cannot read org team membership (HTTP 404). Org members and
-          # collaborators are trusted via author_association instead.
-          case "${ASSOC}" in
-            OWNER|MEMBER|COLLABORATOR)
-              echo "${ACTOR} allowed via author_association=${ASSOC}."
-              exit 0
-              ;;
-          esac
+          # GITHUB_TOKEN cannot read org teams. Private org membership also
+          # makes author_association=CONTRIBUTOR for org owners. Same-repo PRs
+          # already require write access to push the branch.
+          if [[ "${HEAD_REPO}" == "${BASE_REPO}" ]]; then
+            echo "${ACTOR} allowed: same-repo PR (${HEAD_REPO})."
+            exit 0
+          fi
 
           endpoint="https://api.github.com/orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${ACTOR}"
           status=$(curl -sS -o /tmp/team_check.json -w "%{http_code}" \
@@ -112,8 +111,8 @@ jobs:
             exit 0
           fi
 
-          echo "::error::Changes to .github/** and LICENSE are restricted to org members/collaborators or ${ORG}/${TEAM_SLUG}."
-          echo "actor=${ACTOR} association=${ASSOC} team_check_http=${status}"
+          echo "::error::Changes to .github/** and LICENSE from forks need ${ORG}/${TEAM_SLUG} membership (or an ORG_READ_TOKEN secret)."
+          echo "actor=${ACTOR} head=${HEAD_REPO} base=${BASE_REPO} team_check_http=${status}"
           cat /tmp/team_check.json || true
           exit 1
 
