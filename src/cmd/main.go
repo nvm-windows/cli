@@ -129,6 +129,28 @@ func main() {
 			fmt.Fprintf(os.Stderr, "sparse identity unregister skipped: %v\n", err)
 		}
 		return
+	case "--provision-sparse-identity":
+		// Elevated MSI: AllUsers + provisioned. Fail-open.
+		settings.Load()
+		root, err := bootstrap.ProgramRoot()
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(0)
+		}
+		if err := bootstrap.ProvisionSparseIdentity(root); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity provision skipped: %v\n", err)
+		}
+		return
+	case "--deprovision-sparse-identity":
+		settings.Load()
+		name := bootstrap.CertifiedAppxName
+		if len(os.Args) >= 3 && strings.TrimSpace(os.Args[2]) != "" {
+			name = strings.TrimSpace(os.Args[2])
+		}
+		if err := bootstrap.DeprovisionSparseIdentity(name); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity deprovision skipped: %v\n", err)
+		}
+		return
 	case "--retire-community-payload":
 		// Impersonated MSI CA: drop community nvm.exe/utils/.icons and the HKCU
 		// uninstall entry during install, not on first nvm launch.

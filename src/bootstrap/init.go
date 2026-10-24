@@ -92,6 +92,7 @@ func EnsureUserProfileInitialized() error {
 			fmt.Fprintf(os.Stderr, "nvm: warning: shim maintenance skipped: %v\n", err)
 		}
 		MaybeRemoveStaleCommunityIdentity()
+		MaybeRegisterCertifiedIdentity()
 		return nil
 	}
 
@@ -155,6 +156,8 @@ func EnsureUserProfileInitialized() error {
 
 	_ = settings.SeedAnnouncementWatermarksIfEmpty(settings.Put)
 	ensureSyncScheduledTask()
+	MaybeRemoveStaleCommunityIdentity()
+	MaybeRegisterCertifiedIdentity()
 
 	return nil
 }
