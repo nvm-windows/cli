@@ -19,6 +19,19 @@ var verifyActivationNode = func(path string) error {
 	return err
 }
 
+// OverrideActivationNodeVerifier replaces the link-mode node.exe Authenticode
+// check. Tests pass nil to skip verification for unsigned stubs. Call the
+// returned function to restore the previous verifier.
+func OverrideActivationNodeVerifier(fn func(path string) error) (restore func()) {
+	previous := verifyActivationNode
+	if fn == nil {
+		verifyActivationNode = func(string) error { return nil }
+	} else {
+		verifyActivationNode = fn
+	}
+	return func() { verifyActivationNode = previous }
+}
+
 var logActivationBlocked = func(versionDir, nodePath, failureKind, detail string) {
 	log.ErrorStructured("node.security.activation_blocked", log.StructuredPayload{
 		"action":           "activation_blocked",
