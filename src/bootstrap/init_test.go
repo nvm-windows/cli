@@ -641,9 +641,7 @@ func resetBootstrapState(t *testing.T) {
 
 func stubActivationVerification(t *testing.T) {
 	t.Helper()
-	originalVerify := verifyActivationNode
-	verifyActivationNode = func(string) error { return nil }
-	t.Cleanup(func() { verifyActivationNode = originalVerify })
+	t.Cleanup(OverrideActivationNodeVerifier(nil))
 }
 
 func assertBootstrapVersion(t *testing.T, want uint32) {

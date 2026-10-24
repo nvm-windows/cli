@@ -55,6 +55,7 @@ func InstallUtilityStub(t *testing.T, name string) {
 // Link mode avoids async reshim.exe (test binary stub stays locked on Windows).
 func (s *Sandbox) PrepareMutatingCommand() {
 	s.t.Helper()
+	s.t.Cleanup(bootstrap.OverrideActivationNodeVerifier(nil))
 	if err := s.WriteSetting("mode", "link"); err != nil {
 		s.t.Fatalf("Put(mode) error = %v", err)
 	}

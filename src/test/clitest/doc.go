@@ -11,7 +11,7 @@
 //
 // Helpers:
 //
-//   - ExecuteBootstrapped: bootstrap + link mode for use/on/off tests (avoids async reshim.exe)
+//   - ExecuteBootstrapped: bootstrap + link mode for use/on/off tests (avoids async reshim.exe; stubs Authenticode so unsigned SeedVersion node.exe is allowed)
 //   - ExecuteWithSyncStub: run commands that invoke sync.exe via the test-binary stub
 //   - ApplyNodeMirrorFixture / SeedCacheArchive: offline list/install tests via test/testdata/index.tab
 //
