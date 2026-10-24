@@ -36,6 +36,7 @@ jobs:
           filters: |
             nvm:
               - 'src/**'
+              - '.github/**'
             github:
               - '.github/**'
               - 'LICENSE'
@@ -127,7 +128,7 @@ jobs:
       - name: Checkout common modules
         shell: pwsh
         run: |
-          $dest = Join-Path (Split-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) -Parent) "common"
+          $dest = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) "common"
           if (-not (Test-Path (Join-Path $dest "settings\go.mod"))) {
             git clone --depth 1 https://github.com/nvm-windows/common.git $dest
           }
