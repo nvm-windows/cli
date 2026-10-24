@@ -100,6 +100,7 @@ func (c *Add) Run() error {
 	msg := fmt.Sprintf("%q now refers to v%s", c.Name, version)
 	fmt.Println(msg)
 	if !system.IsAppInForeground() {
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go notify.Send(settings.AppId, "", msg)
 	}
 

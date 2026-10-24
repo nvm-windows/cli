@@ -389,6 +389,7 @@ func trustNoAnswerMessage(name, why string) string {
 func notifyTrustNoAnswer(name, why string) {
 	msg := trustNoAnswerMessage(name, why)
 	fmt.Fprintln(os.Stderr, msg)
+	// Critical firewall toast: no collection (reserved nvm.firewall).
 	_ = notify.Send(settings.AppId, "NVM Firewall", msg)
 }
 
@@ -423,6 +424,7 @@ func (n *NotifyChanged) Run() error {
 		return fmt.Errorf("module name required")
 	}
 	msg := fmt.Sprintf("A change to module '%s' was automatically trusted.", name)
+	// Critical firewall toast: no collection (reserved nvm.firewall).
 	_ = notify.Send(settings.AppId, "NVM Firewall", msg)
 	// NVM4406 audit emitted by proxy at decision site.
 	return nil
@@ -480,6 +482,7 @@ func promptTrustToast(name string) error {
 	defer os.Remove(rspPath)
 
 	msg := fmt.Sprintf("Untrusted module '%s' changed. Do you trust this module?", name)
+	// Critical firewall toast: no collection (reserved nvm.firewall).
 	_ = notify.Send(
 		settings.AppId,
 		"NVM Firewall",

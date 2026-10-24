@@ -80,6 +80,7 @@ func Link(source, symlink string) error {
 
 		if no_devmode {
 			// Trigger a notification to open settings to enable developer mode
+			// Critical setup toast: no collection (reserved nvm.setup).
 			notify.Send(settings.AppId, "Help Enabling Symlinks", "Developer Mode is required to use symlinks.",
 				notify.Action{Label: "Open Developer Settings", URL: "ms-settings:developers"},
 			)

@@ -123,6 +123,7 @@ func (s *Set) Run() error {
 		notifyLines = append(notifyLines, fmt.Sprintf("%s set to %s", key, displayValue(key, value)))
 	}
 	if len(notifyLines) > 0 && !system.IsAppInForeground() {
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go notify.Send(settings.AppId, "", strings.Join(notifyLines, ", "))
 	}
 

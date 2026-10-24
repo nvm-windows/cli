@@ -59,6 +59,7 @@ func (c *Remove) Run() error {
 	msg := fmt.Sprintf("%d alias%s removed successfully.", count, suffix)
 	fmt.Println(msg)
 	if !system.IsAppInForeground() {
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go notify.Send(settings.AppId, "", msg)
 	}
 

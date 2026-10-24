@@ -74,6 +74,8 @@ func cleanupLegacyUserPayload(dataRoot string) error {
 		return err
 	}
 
+	_ = UnregisterSparseIdentity(CommunityAppxName)
+
 	for _, path := range []string{
 		legacyNvmExe,
 		filepath.Join(dataRoot, "utils"),

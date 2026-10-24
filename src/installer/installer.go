@@ -280,6 +280,7 @@ func install(
 			title = fmt.Sprintf("Node.js v%s Installation Failed", nodeVersion)
 			message = processErr.Error()
 		}
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go func() { _ = notify.Send(settings.AppId, title, message) }()
 	}()
 

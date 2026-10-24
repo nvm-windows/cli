@@ -107,6 +107,50 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "--register-sparse-identity":
+		// Inno/MSI: per-user Add-AppxPackage of the identity .msix. Fail-open.
+		settings.Load()
+		root, err := bootstrap.ProgramRoot()
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(0)
+		}
+		if err := bootstrap.RegisterSparseIdentity(root); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity register skipped: %v\n", err)
+		}
+		return
+	case "--unregister-sparse-identity":
+		settings.Load()
+		name := bootstrap.CommunityAppxName
+		if len(os.Args) >= 3 && strings.TrimSpace(os.Args[2]) != "" {
+			name = strings.TrimSpace(os.Args[2])
+		}
+		if err := bootstrap.UnregisterSparseIdentity(name); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity unregister skipped: %v\n", err)
+		}
+		return
+	case "--provision-sparse-identity":
+		// Elevated MSI: AllUsers + provisioned. Fail-open.
+		settings.Load()
+		root, err := bootstrap.ProgramRoot()
+		if err != nil {
+			fmt.Fprint(os.Stderr, err.Error())
+			os.Exit(0)
+		}
+		if err := bootstrap.ProvisionSparseIdentity(root); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity provision skipped: %v\n", err)
+		}
+		return
+	case "--deprovision-sparse-identity":
+		settings.Load()
+		name := bootstrap.CertifiedAppxName
+		if len(os.Args) >= 3 && strings.TrimSpace(os.Args[2]) != "" {
+			name = strings.TrimSpace(os.Args[2])
+		}
+		if err := bootstrap.DeprovisionSparseIdentity(name); err != nil {
+			fmt.Fprintf(os.Stderr, "sparse identity deprovision skipped: %v\n", err)
+		}
+		return
 	case "--retire-community-payload":
 		// Impersonated MSI CA: drop community nvm.exe/utils/.icons and the HKCU
 		// uninstall entry during install, not on first nvm launch.
@@ -288,6 +332,7 @@ func main() {
 			newRoot,
 			oldRoot,
 		)
+		// Critical setup toast: no collection (reserved nvm.setup).
 		if err := notify.Send(settings.AppId, "NVM storage location updated", msg); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)
@@ -305,6 +350,7 @@ func main() {
 			"Uninstall the old Node.js at %s. NVM for Windows left it in place during this upgrade. Leaving it installed causes conflicts.",
 			nodePath,
 		)
+		// Critical setup toast: no collection (reserved nvm.setup).
 		if err := notify.Send(settings.AppId, "Old Node.js still installed", officialMsg); err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 			os.Exit(1)

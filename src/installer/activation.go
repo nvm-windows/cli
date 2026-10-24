@@ -114,6 +114,7 @@ func ActivateVersion(version string) error {
 	msg := fmt.Sprintf("Now using Node.js v%s by default.", version)
 	fmt.Fprintln(os.Stdout, msg)
 	if !system.IsAppInForeground() {
+		// Critical activity toast: no collection (reserved nvm.activity).
 		go notify.Send(settings.AppId, "", msg)
 	}
 
