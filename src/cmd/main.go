@@ -205,13 +205,27 @@ func main() {
 		}
 		return
 	case "--sign-script":
-		// Force-resign one launcher after trust prompt (bypass TrustedModules gate).
-		if len(os.Args) < 3 {
-			fmt.Fprint(os.Stderr, "missing script path for --sign-script\n")
+		// Proxy-only helper after a trust prompt. Path arrives on stdin (anonymous
+		// pipe from proxy.exe). argv is ignored so a shell cannot stamp VerifyCache.
+		if len(os.Args) != 2 {
+			fmt.Fprint(os.Stderr, "sign-script refused: path must arrive on the proxy pipe\n")
 			os.Exit(1)
 		}
 		settings.Load()
-		if err := verifycache.SignScript(os.Args[2]); err != nil {
+		if err := verifycache.AuthorizeSignScriptFromParent(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		scriptPath, err := verifycache.ReadSignScriptPath(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		if !verifycache.IsDelegatedLauncherPath(scriptPath) {
+			fmt.Fprint(os.Stderr, "sign-script refused: path is not a delegated launcher\n")
+			os.Exit(1)
+		}
+		if err := verifycache.SignScript(scriptPath); err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
