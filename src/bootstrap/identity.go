@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	CommunityAppxName   = "AuthorSoftware.NVMWindows"
-	CertifiedAppxName   = "AuthorSoftware.NVMWindows.Certified"
-	identityMsixName    = "NVMWindows.msix"
-	retiredValueName    = "CommunityIdentityRetired"
-	registeredValueName = "CertifiedIdentityRegistered"
+	CommunityAppxName         = "AuthorSoftware.NVMWindows"
+	CertifiedAppxName         = "AuthorSoftware.NVMWindows.Certified"
+	identityMsixName          = "NVMWindows.msix"
+	retiredValueName          = "CommunityIdentityRetired"
+	registeredValueName       = "CertifiedIdentityRegistered"
+	certifiedRetiredValueName = "CertifiedIdentityRetired"
 )
 
 var runAppxCommand = func(command string) error {
@@ -80,7 +81,11 @@ func DeprovisionSparseIdentity(name string) error {
 		"$n = %s; Get-AppxPackage -AllUsers -Name $n -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue; Get-AppxPackage -Name $n -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue; Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $n } | ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue }",
 		psSingleQuote(name),
 	)
-	return runAppxCommand(cmd)
+	err := runAppxCommand(cmd)
+	if strings.EqualFold(name, CertifiedAppxName) {
+		_ = clearCertifiedIdentityRegistered()
+	}
+	return err
 }
 
 // UnregisterSparseIdentity removes a sparse identity package. Missing package is success.
@@ -93,7 +98,11 @@ func UnregisterSparseIdentity(name string) error {
 		"Get-AppxPackage -Name %s | Remove-AppxPackage -ErrorAction SilentlyContinue",
 		psSingleQuote(name),
 	)
-	return runAppxCommand(cmd)
+	err := runAppxCommand(cmd)
+	if strings.EqualFold(name, CertifiedAppxName) {
+		_ = clearCertifiedIdentityRegistered()
+	}
+	return err
 }
 
 // MaybeRemoveStaleCommunityIdentity drops a leftover community Appx after
@@ -124,6 +133,49 @@ func MaybeRegisterCertifiedIdentity() {
 		return
 	}
 	_ = markCertifiedIdentityRegistered()
+	_ = clearCertifiedIdentityRetired()
+}
+
+// MaybeRemoveStaleCertifiedIdentity drops leftover Certified Appx after
+// certified→community when MSI deprovision ran as SYSTEM. Leaves Certified
+// identity alone if Program Files nvm.exe is still present.
+func MaybeRemoveStaleCertifiedIdentity() {
+	root, err := ProgramRoot()
+	if err != nil || !shouldRemoveStaleCertifiedIdentity(root, certifiedProgramInstalled()) {
+		return
+	}
+	if certifiedIdentityRetired() {
+		return
+	}
+	_ = UnregisterSparseIdentity(CertifiedAppxName)
+	_ = markCertifiedIdentityRetired()
+}
+
+func shouldRemoveStaleCertifiedIdentity(programRoot string, certifiedStillInstalled bool) bool {
+	if isMachineProgramRoot(programRoot) {
+		return false
+	}
+	return !certifiedStillInstalled
+}
+
+func certifiedProgramInstalled() bool {
+	for _, p := range certifiedNvmExePaths() {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func certifiedNvmExePaths() []string {
+	var out []string
+	if pf := strings.TrimSpace(os.Getenv("ProgramFiles")); pf != "" {
+		out = append(out, filepath.Join(pf, "Author Software", "nvm", "nvm.exe"))
+	}
+	if pf := strings.TrimSpace(os.Getenv("ProgramFiles(x86)")); pf != "" {
+		out = append(out, filepath.Join(pf, "Author Software", "nvm", "nvm.exe"))
+	}
+	return out
 }
 
 func isMachineProgramRoot(root string) bool {
@@ -169,6 +221,42 @@ func markCertifiedIdentityRegistered() error {
 		return nil
 	}
 	return registry.PutBool(true, root+"/"+registeredValueName)
+}
+
+func clearCertifiedIdentityRegistered() error {
+	root := strings.TrimSpace(prefs.ROOT)
+	if root == "" {
+		return nil
+	}
+	return registry.Del(root + "/" + registeredValueName)
+}
+
+func certifiedIdentityRetired() bool {
+	root := strings.TrimSpace(prefs.ROOT)
+	if root == "" {
+		return false
+	}
+	v, exists, err := registry.GetBool(root + "/" + certifiedRetiredValueName)
+	if err != nil || !exists {
+		return false
+	}
+	return v
+}
+
+func markCertifiedIdentityRetired() error {
+	root := strings.TrimSpace(prefs.ROOT)
+	if root == "" {
+		return nil
+	}
+	return registry.PutBool(true, root+"/"+certifiedRetiredValueName)
+}
+
+func clearCertifiedIdentityRetired() error {
+	root := strings.TrimSpace(prefs.ROOT)
+	if root == "" {
+		return nil
+	}
+	return registry.Del(root + "/" + certifiedRetiredValueName)
 }
 
 func psSingleQuote(path string) string {

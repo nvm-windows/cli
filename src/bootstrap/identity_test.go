@@ -67,6 +67,18 @@ func TestProvisionSparseIdentityCommand(t *testing.T) {
 	}
 }
 
+func TestShouldRemoveStaleCertifiedIdentity(t *testing.T) {
+	if shouldRemoveStaleCertifiedIdentity(`C:\Program Files\Author Software\nvm`, false) {
+		t.Fatal("Program Files install must keep Certified identity")
+	}
+	if shouldRemoveStaleCertifiedIdentity(`C:\Users\a\AppData\Local\Author Software\nvm`, true) {
+		t.Fatal("must not strip Certified identity while Program Files nvm.exe exists")
+	}
+	if !shouldRemoveStaleCertifiedIdentity(`C:\Users\a\AppData\Local\Author Software\nvm`, false) {
+		t.Fatal("AppData install after MSI removal should drop leftover Certified identity")
+	}
+}
+
 func TestDeprovisionSparseIdentityCommand(t *testing.T) {
 	prev := runAppxCommand
 	t.Cleanup(func() { runAppxCommand = prev })

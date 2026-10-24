@@ -18,3 +18,5 @@ func UnregisterSparseIdentity(string) error { return nil }
 func MaybeRemoveStaleCommunityIdentity() {}
 
 func MaybeRegisterCertifiedIdentity() {}
+
+func MaybeRemoveStaleCertifiedIdentity() {}

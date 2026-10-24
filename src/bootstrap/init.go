@@ -93,6 +93,7 @@ func EnsureUserProfileInitialized() error {
 		}
 		MaybeRemoveStaleCommunityIdentity()
 		MaybeRegisterCertifiedIdentity()
+		MaybeRemoveStaleCertifiedIdentity()
 		return nil
 	}
 
@@ -158,6 +159,7 @@ func EnsureUserProfileInitialized() error {
 	ensureSyncScheduledTask()
 	MaybeRemoveStaleCommunityIdentity()
 	MaybeRegisterCertifiedIdentity()
+	MaybeRemoveStaleCertifiedIdentity()
 
 	return nil
 }
