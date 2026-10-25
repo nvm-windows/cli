@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type Upgrade struct {
-	Check bool `flag:"check" help:"Check for updates without performing the upgrade."`
-	Force bool `flag:"force" help:"Upgrade without warning about processes that will be closed."`
+	Check   bool   `flag:"check" help:"Check for updates without performing the upgrade."`
+	Force   bool   `flag:"force" help:"Upgrade without warning about processes that will be closed."`
+	Release string `flag:"release" help:"Install this NVM version instead of the latest general or hotfix."`
 }
 
 func (s *Upgrade) Run() error {
@@ -38,6 +40,9 @@ func (s *Upgrade) Run() error {
 	}
 	if s.Force {
 		cmd.Args = append(cmd.Args, "--force")
+	}
+	if rel := strings.TrimSpace(s.Release); rel != "" {
+		cmd.Args = append(cmd.Args, "--release", rel)
 	}
 
 	cmd.Stdout = os.Stdout
