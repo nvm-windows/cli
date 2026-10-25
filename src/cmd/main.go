@@ -48,9 +48,13 @@ func main() {
 		settings.Load()
 		raw := os.Args[1]
 		var err error
-		if strings.Contains(strings.ToLower(raw), "nvm://malware") {
+		lower := strings.ToLower(raw)
+		switch {
+		case strings.Contains(lower, "nvm://malware"):
 			err = malware.HandleProtocolURI(raw)
-		} else {
+		case strings.Contains(lower, "nvm://upgrade"):
+			err = commands.HandleUpgradeProtocolURI(raw)
+		default:
 			err = firewall.HandleProtocolURI(raw)
 		}
 		if err != nil {
