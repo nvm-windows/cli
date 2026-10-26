@@ -82,6 +82,13 @@ func EnsureUserProfileInitialized() error {
 		needsRepair = true
 	}
 
+	// Electron apps (Cursor, VS Code) copy PATH without expanding %LOCALAPPDATA%.
+	// HKCU gets the expanded per-user LocalAppData .nodejs path. That location is
+	// fixed by the installer (user-controlled); custom InstallRoot does not move it.
+	if err := ensureExpandedUserNodejsPath(); err != nil {
+		fmt.Fprintf(os.Stderr, "nvm: warning: user PATH .nodejs entry skipped: %v\n", err)
+	}
+
 	// Fast path: profile already healthy. Avoid reshim/ACL/schtasks/seed on every command.
 	// MaintainShimDirectory is a no-op unless Program Files shims are newer than data copies.
 	if !needsRepair && state.version >= currentBootstrapVersion {
