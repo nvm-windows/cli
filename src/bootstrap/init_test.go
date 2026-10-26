@@ -303,6 +303,7 @@ func TestEnsureUserProfileInitializedPreservesExistingSyncAssets(t *testing.T) {
 }
 
 func TestEnsureUserProfileInitializedCleansLegacyPayload(t *testing.T) {
+	snapshotUserEnvironment(t)
 	root := t.TempDir()
 	installRoot := filepath.Join(root, "installs")
 	resetBootstrapState(t)
@@ -729,6 +730,50 @@ func assertRegistryValueMissing(t *testing.T, keyPath, valueName string) {
 	_, _, err = key.GetStringValue(valueName)
 	if err != winreg.ErrNotExist {
 		t.Fatalf("GetStringValue(%q, %q) error = %v, want %v", keyPath, valueName, err, winreg.ErrNotExist)
+	}
+}
+
+func snapshotUserEnvironment(t *testing.T) {
+	t.Helper()
+	key, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE)
+	if err != nil {
+		t.Fatalf("OpenKey(Environment) error = %v", err)
+	}
+	path, pathKind, pathErr := key.GetStringValue("Path")
+	home, homeKind, homeErr := key.GetStringValue("NVM_HOME")
+	link, linkKind, linkErr := key.GetStringValue("NVM_SYMLINK")
+	key.Close()
+
+	t.Cleanup(func() {
+		env, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE|winreg.SET_VALUE)
+		if err != nil {
+			t.Errorf("OpenKey(Environment) restore error = %v", err)
+			return
+		}
+		defer env.Close()
+		restoreEnvValue(t, env, "Path", path, pathKind, pathErr)
+		restoreEnvValue(t, env, "NVM_HOME", home, homeKind, homeErr)
+		restoreEnvValue(t, env, "NVM_SYMLINK", link, linkKind, linkErr)
+	})
+}
+
+func restoreEnvValue(t *testing.T, key winreg.Key, name, value string, kind uint32, readErr error) {
+	t.Helper()
+	if readErr == winreg.ErrNotExist {
+		_ = key.DeleteValue(name)
+		return
+	}
+	if readErr != nil {
+		return
+	}
+	var err error
+	if kind == winreg.EXPAND_SZ {
+		err = key.SetExpandStringValue(name, value)
+	} else {
+		err = key.SetStringValue(name, value)
+	}
+	if err != nil {
+		t.Errorf("restore %s: %v", name, err)
 	}
 }
 

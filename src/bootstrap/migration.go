@@ -131,6 +131,13 @@ func removeLegacyCurrentUserEnv(dataRoot string) error {
 	userPath, _, pathErr := key.GetStringValue("Path")
 	if pathErr != nil {
 		if pathErr == winreg.ErrNotExist {
+			if nodejsPath, ok := canonicalUserNodejsPath(); ok {
+				ensured, _ := ensureUserNodejsPath("", nodejsPath)
+				if err := key.SetExpandStringValue("Path", ensured); err != nil {
+					return fmt.Errorf("failed to write current-user Path: %w", err)
+				}
+				changed = true
+			}
 			if changed {
 				legacy.BroadcastEnvironmentChange()
 			}
@@ -141,6 +148,9 @@ func removeLegacyCurrentUserEnv(dataRoot string) error {
 
 	// Also strip community program-root PATH entries (keep .nodejs).
 	cleaned := filterUserPath(userPath, dataRoot, forceRemove)
+	if nodejsPath, ok := canonicalUserNodejsPath(); ok {
+		cleaned, _ = ensureUserNodejsPath(cleaned, nodejsPath)
+	}
 	if cleaned != userPath {
 		if err := key.SetExpandStringValue("Path", cleaned); err != nil {
 			return fmt.Errorf("failed to rewrite current-user Path: %w", err)
@@ -178,6 +188,120 @@ func looksLikeAuthorNvmHome(value string) bool {
 		return false
 	}
 	return strings.HasSuffix(norm, `\author software\nvm`)
+}
+
+const unexpandedUserNodejsPath = `%LOCALAPPDATA%\Author Software\nvm\.nodejs`
+
+var serviceProfileLocalAppDataSuffixes = []string{
+	`\windows\system32\config\systemprofile\appdata\local`,
+	`\windows\serviceprofiles\localservice\appdata\local`,
+	`\windows\serviceprofiles\networkservice\appdata\local`,
+}
+
+func canonicalUserDataRootFrom(lookupEnv func(string) (string, bool)) (string, bool) {
+	local, ok := lookupEnv("LOCALAPPDATA")
+	if !ok {
+		return "", false
+	}
+	local = strings.TrimSpace(local)
+	if local == "" || isServiceProfileLocalAppData(local) {
+		return "", false
+	}
+	return filepath.Join(local, "Author Software", "nvm"), true
+}
+
+func canonicalUserNodejsPathFrom(lookupEnv func(string) (string, bool)) (string, bool) {
+	root, ok := canonicalUserDataRootFrom(lookupEnv)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(root, ".nodejs"), true
+}
+
+func canonicalUserNodejsPath() (string, bool) {
+	return canonicalUserNodejsPathFrom(os.LookupEnv)
+}
+
+func isServiceProfileLocalAppData(localAppData string) bool {
+	cleaned := strings.ToLower(filepath.Clean(localAppData))
+	for _, root := range serviceProfileLocalAppDataSuffixes {
+		if strings.HasSuffix(cleaned, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureUserNodejsPath prepends the expanded .nodejs directory and drops the
+// unexpanded %LOCALAPPDATA% form. Cursor/VS Code copy PATH without expanding it.
+func ensureUserNodejsPath(userPath, nodejsPath string) (string, bool) {
+	nodejsNorm := normalizePathMatch(nodejsPath)
+	unexpandedNorm := normalizePathMatch(unexpandedUserNodejsPath)
+	hasExpanded := false
+	kept := make([]string, 0)
+	for _, seg := range strings.Split(userPath, ";") {
+		trimmed := strings.TrimSpace(seg)
+		if trimmed == "" {
+			continue
+		}
+		norm := normalizePathMatch(trimmed)
+		expanded := normalizePathMatch(os.ExpandEnv(trimmed))
+		if norm == unexpandedNorm {
+			continue
+		}
+		if nodejsNorm != "" && (norm == nodejsNorm || expanded == nodejsNorm) {
+			if !hasExpanded {
+				kept = append(kept, filepath.Clean(nodejsPath))
+				hasExpanded = true
+			}
+			continue
+		}
+		kept = append(kept, trimmed)
+	}
+	if hasExpanded {
+		out := strings.Join(kept, ";")
+		return out, out != userPath
+	}
+	if nodejsNorm == "" {
+		return strings.Join(kept, ";"), false
+	}
+	out := filepath.Clean(nodejsPath)
+	if len(kept) > 0 {
+		out = out + ";" + strings.Join(kept, ";")
+	}
+	return out, true
+}
+
+func ensureExpandedUserNodejsPath() error {
+	nodejsPath, ok := canonicalUserNodejsPath()
+	if !ok {
+		return nil
+	}
+	key, err := winreg.OpenKey(winreg.CURRENT_USER, `Environment`, winreg.QUERY_VALUE|winreg.SET_VALUE)
+	if err != nil {
+		if err == winreg.ErrNotExist {
+			return nil
+		}
+		return fmt.Errorf("failed to open current-user environment key: %w", err)
+	}
+	defer key.Close()
+
+	userPath, _, pathErr := key.GetStringValue("Path")
+	if pathErr != nil {
+		if pathErr != winreg.ErrNotExist {
+			return fmt.Errorf("failed to read current-user Path: %w", pathErr)
+		}
+		userPath = ""
+	}
+	cleaned, changed := ensureUserNodejsPath(userPath, nodejsPath)
+	if !changed {
+		return nil
+	}
+	if err := key.SetExpandStringValue("Path", cleaned); err != nil {
+		return fmt.Errorf("failed to rewrite current-user Path: %w", err)
+	}
+	legacy.BroadcastEnvironmentChange()
+	return nil
 }
 
 // filterUserPath drops legacy NVM segments and the community program root for dataRoot
