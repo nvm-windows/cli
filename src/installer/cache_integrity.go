@@ -77,6 +77,12 @@ func verifyCachedNodeArchiveIntegrity(ctx context.Context, version, archivePath 
 		return finishDownloadCacheVerification(version, archivePath)
 	}
 
+	// local_install_only: never fetch SHASUMS256.txt. Trust the staged
+	// archive the same way machine-policy LocalInstallDir does.
+	if cfg.LocalOnly {
+		return finishDownloadCacheVerification(version, archivePath)
+	}
+
 	if err := verifyArchiveWithMirrorSHASUMFn(ctx, version, archivePath, cfg); err != nil {
 		return err
 	}

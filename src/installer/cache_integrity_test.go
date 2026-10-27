@@ -177,6 +177,49 @@ func TestVerifyCachedNodeArchiveIntegrityTrustedLocalInstallBypass(t *testing.T)
 	}
 }
 
+func TestVerifyCachedNodeArchiveIntegrityLocalOnlySkipsMirror(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "node-v22.0.0-win-x64.7z")
+	if err := os.WriteFile(archivePath, []byte("airgapped local archive"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	origVerify := verifyDownloadArchiveCacheFn
+	verifyDownloadArchiveCacheFn = func(string) error { return verifycache.ErrDownloadCacheMiss }
+	t.Cleanup(func() { verifyDownloadArchiveCacheFn = origVerify })
+
+	origTrusted := isMachinePolicyTrustedLocalArchiveFn
+	isMachinePolicyTrustedLocalArchiveFn = func(string) (bool, error) { return false, nil }
+	t.Cleanup(func() { isMachinePolicyTrustedLocalArchiveFn = origTrusted })
+
+	mirrorCalled := false
+	origMirror := verifyArchiveWithMirrorSHASUMFn
+	verifyArchiveWithMirrorSHASUMFn = func(context.Context, string, string, InstallConfig) error {
+		mirrorCalled = true
+		return errors.New("mirror should not be called")
+	}
+	t.Cleanup(func() { verifyArchiveWithMirrorSHASUMFn = origMirror })
+
+	signed := false
+	origSign := signDownloadArchiveCacheFn
+	signDownloadArchiveCacheFn = func(string) error {
+		signed = true
+		return nil
+	}
+	t.Cleanup(func() { signDownloadArchiveCacheFn = origSign })
+
+	cfg := InstallConfig{LocalOnly: true}
+	if err := verifyCachedNodeArchiveIntegrity(t.Context(), "22.0.0", archivePath, cfg); err != nil {
+		t.Fatalf("verifyCachedNodeArchiveIntegrity() error = %v", err)
+	}
+	if mirrorCalled {
+		t.Fatal("mirror SHASUM verification was called, want local-only skip")
+	}
+	if !signed {
+		t.Fatal("expected SignDownloadArchiveCache after local-only trust")
+	}
+}
+
 func TestVerifyCachedNodeArchiveIntegrityFallsBackToMirrorSHASUM(t *testing.T) {
 	dir := t.TempDir()
 	archiveName := "node-v22.0.0-win-x64.7z"
