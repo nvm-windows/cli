@@ -1,9 +1,12 @@
 package commands_test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"nvm/test/clitest"
@@ -57,14 +60,38 @@ func TestCLIInstallSkipsAlreadyInstalled(t *testing.T) {
 
 func TestCLIInstallLocalOnlyMissingArchive(t *testing.T) {
 	sb := clitest.NewSandbox(t)
-	sb.ApplyNodeMirrorFixture(t, clitest.TestdataPath(t, "index.tab"))
 	if err := sb.WriteSetting("local_install_only", true); err != nil {
 		t.Fatalf("WriteSetting(local_install_only) error = %v", err)
+	}
+
+	prevFixtures := os.Getenv("NVM_TEST_HTTP_FIXTURES")
+	if err := os.Setenv("NVM_TEST_HTTP_FIXTURES", "1"); err != nil {
+		t.Fatalf("Setenv(NVM_TEST_HTTP_FIXTURES) error = %v", err)
+	}
+	t.Cleanup(func() {
+		if prevFixtures == "" {
+			_ = os.Unsetenv("NVM_TEST_HTTP_FIXTURES")
+			return
+		}
+		_ = os.Setenv("NVM_TEST_HTTP_FIXTURES", prevFixtures)
+	})
+
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		http.Error(w, "catalog should not be fetched", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	if err := sb.WriteSetting("node_mirror", srv.URL); err != nil {
+		t.Fatalf("WriteSetting(node_mirror) error = %v", err)
 	}
 
 	stdout, stderr, err := sb.ExecuteWithSyncStub("install", "22.0.0")
 	if err == nil {
 		t.Fatal("Execute(install 22.0.0) expected error, got nil")
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("catalog fetched %d time(s), want 0 for exact local-only install", n)
 	}
 	combined := stdout + stderr + err.Error()
 	if !strings.Contains(combined, "local install directory") {
