@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"common/acl"
 	"common/settings"
 	"common/system"
 	"common/verifycache"
@@ -23,6 +24,16 @@ func ActivateVersion(version string) error {
 	version = strings.TrimSpace(version)
 	if version == "" {
 		return fmt.Errorf("version must not be empty")
+	}
+
+	if allowed, err := acl.IsAllowedVersion(version); !allowed {
+		if err != nil {
+			return fmt.Errorf("NVM4411: %w", err)
+		}
+		return fmt.Errorf("NVM4411: v%s is blocked by version firewall", version)
+	}
+	if err := verifyNodeBinaryMatchesVersion(getRoot(version), version); err != nil {
+		return err
 	}
 
 	lastVersion, err := stringSetting("active_version")
