@@ -29,7 +29,7 @@ type RootCommand struct {
 	Cache        cache.Root    `cmd:"cache" help:"View and manage the ${app} cache."`
 	Config       cfg.Root      `cmd:"config" aliases:"cfg" help:"View and manage the ${app} configuration."`
 	Firewall     firewall.Root `cmd:"firewall" aliases:"fw" help:"Manage NVM version/module/trust firewall policy."`
-	Malware      malware.Root  `cmd:"malware" hidden:"true" help:"Internal malware helpers."`
+	Malware      malware.Root  `cmd:"malware" help:"Show local malware verdicts."`
 	On           Toggle        `cmd:"on" help:"Manage Node.js with ${app}."`
 	Off          Toggle        `cmd:"off" help:"Stop managing Node.js with ${app}."`
 	Doctor       Doctor        `cmd:"doctor" help:"Detect and fix common ${app} issues." hidden:"true"`
