@@ -133,3 +133,48 @@ func TestVerifyNodeSHASUMFixtureRegression(t *testing.T) {
 		t.Fatal("verifyNodeSHASUM(fixture) = false, want true")
 	}
 }
+
+func TestParseCoreVersion(t *testing.T) {
+	got, ok := parseCoreVersion("v24.0.0")
+	if !ok || got != (peCoreVersion{major: 24, minor: 0, patch: 0}) {
+		t.Fatalf("parseCoreVersion(v24.0.0) = %#v ok=%v", got, ok)
+	}
+	got, ok = parseCoreVersion("24.0.0-nightly20240101")
+	if !ok || got != (peCoreVersion{major: 24, minor: 0, patch: 0}) {
+		t.Fatalf("parseCoreVersion(prerelease) = %#v ok=%v", got, ok)
+	}
+	if _, ok = parseCoreVersion(""); ok {
+		t.Fatal("parseCoreVersion(empty) ok, want false")
+	}
+}
+
+func TestCoreVersionEqualCatchesSwap(t *testing.T) {
+	fileV10 := peCoreVersion{major: 10, minor: 0, patch: 0}
+	if coreVersionEqual(fileV10, "24.0.0") {
+		t.Fatal("Node 10 FileVersion must not match folder 24.0.0")
+	}
+	if !coreVersionEqual(fileV10, "10.0.0") {
+		t.Fatal("Node 10 FileVersion must match folder 10.0.0")
+	}
+	if !coreVersionEqual(peCoreVersion{major: 24, minor: 1, patch: 0}, "24.1.0-rc.1") {
+		t.Fatal("prerelease folder must compare on major.minor.patch")
+	}
+}
+
+func TestVerifyNodeBinaryMatchesVersionSkipsMissingExe(t *testing.T) {
+	dir := t.TempDir()
+	if err := verifyNodeBinaryMatchesVersion(dir, "24.0.0"); err != nil {
+		t.Fatalf("missing node.exe should skip: %v", err)
+	}
+}
+
+func TestVerifyNodeBinaryMatchesVersionRejectsNonPE(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "node.exe"), []byte("not a pe"), 0o644); err != nil {
+		t.Fatalf("WriteFile(node.exe) error = %v", err)
+	}
+	err := verifyNodeBinaryMatchesVersion(dir, "24.0.0")
+	if err == nil || !strings.Contains(err.Error(), "NVM4314") {
+		t.Fatalf("non-PE node.exe error = %v, want NVM4314", err)
+	}
+}

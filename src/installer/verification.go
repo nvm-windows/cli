@@ -129,3 +129,152 @@ func peCompanyName(exePath, fallback string) string {
 	}
 	return company
 }
+
+const vsFixedFileInfoSignature = 0xFEEF04BD
+
+type vsFixedFileInfo struct {
+	Signature        uint32
+	StrucVersion     uint32
+	FileVersionMS    uint32
+	FileVersionLS    uint32
+	ProductVersionMS uint32
+	ProductVersionLS uint32
+	FileFlagsMask    uint32
+	FileFlags        uint32
+	FileOS           uint32
+	FileType         uint32
+	FileSubtype      uint32
+	FileDateMS       uint32
+	FileDateLS       uint32
+}
+
+type peCoreVersion struct {
+	major uint32
+	minor uint32
+	patch uint32
+}
+
+func parseCoreVersion(raw string) (peCoreVersion, bool) {
+	s := strings.TrimSpace(raw)
+	if len(s) >= 1 && (s[0] == 'v' || s[0] == 'V') {
+		s = s[1:]
+	}
+	if s == "" {
+		return peCoreVersion{}, false
+	}
+	if i := strings.IndexAny(s, "-+"); i >= 0 {
+		s = s[:i]
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) == 0 || parts[0] == "" {
+		return peCoreVersion{}, false
+	}
+	major, err := parseVersionPart(parts[0])
+	if err != nil {
+		return peCoreVersion{}, false
+	}
+	minor := uint32(0)
+	patch := uint32(0)
+	if len(parts) > 1 {
+		minor, err = parseVersionPart(parts[1])
+		if err != nil {
+			return peCoreVersion{}, false
+		}
+	}
+	if len(parts) > 2 {
+		patch, err = parseVersionPart(parts[2])
+		if err != nil {
+			return peCoreVersion{}, false
+		}
+	}
+	return peCoreVersion{major: major, minor: minor, patch: patch}, true
+}
+
+func parseVersionPart(raw string) (uint32, error) {
+	if raw == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	var n uint64
+	for _, c := range raw {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number")
+		}
+		n = n*10 + uint64(c-'0')
+		if n > 0xffffffff {
+			return 0, fmt.Errorf("overflow")
+		}
+	}
+	return uint32(n), nil
+}
+
+func coreVersionEqual(file peCoreVersion, expected string) bool {
+	folder, ok := parseCoreVersion(expected)
+	if !ok {
+		return false
+	}
+	return file.major == folder.major && file.minor == folder.minor && file.patch == folder.patch
+}
+
+func peFileVersion(exePath string) (peCoreVersion, error) {
+	vdll := windows.NewLazySystemDLL("version.dll")
+	getInfoSize := vdll.NewProc("GetFileVersionInfoSizeW")
+	getInfo := vdll.NewProc("GetFileVersionInfoW")
+	queryValue := vdll.NewProc("VerQueryValueW")
+
+	path, err := windows.UTF16PtrFromString(exePath)
+	if err != nil {
+		return peCoreVersion{}, err
+	}
+
+	size, _, _ := getInfoSize.Call(uintptr(unsafe.Pointer(path)), 0)
+	if size == 0 {
+		return peCoreVersion{}, fmt.Errorf("VERSIONINFO missing")
+	}
+
+	buf := make([]byte, size)
+	ret, _, _ := getInfo.Call(uintptr(unsafe.Pointer(path)), 0, size, uintptr(unsafe.Pointer(&buf[0])))
+	if ret == 0 {
+		return peCoreVersion{}, fmt.Errorf("VERSIONINFO missing")
+	}
+
+	rootBlock, err := windows.UTF16PtrFromString(`\`)
+	if err != nil {
+		return peCoreVersion{}, err
+	}
+	var infoPtr uintptr
+	var infoLen uint32
+	ret, _, _ = queryValue.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(rootBlock)), uintptr(unsafe.Pointer(&infoPtr)), uintptr(unsafe.Pointer(&infoLen)))
+	if ret == 0 || infoPtr == 0 || infoLen < uint32(unsafe.Sizeof(vsFixedFileInfo{})) {
+		return peCoreVersion{}, fmt.Errorf("VERSIONINFO missing")
+	}
+
+	info := (*vsFixedFileInfo)(unsafe.Pointer(infoPtr))
+	if info.Signature != vsFixedFileInfoSignature {
+		return peCoreVersion{}, fmt.Errorf("VERSIONINFO missing")
+	}
+
+	return peCoreVersion{
+		major: info.FileVersionMS >> 16,
+		minor: info.FileVersionMS & 0xffff,
+		patch: info.FileVersionLS >> 16,
+	}, nil
+}
+
+func verifyNodeBinaryMatchesVersion(versionDir, version string) error {
+	exePath := filepath.Join(versionDir, "node.exe")
+	if _, err := os.Stat(exePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("NVM4314: unable to inspect %s: %w", exePath, err)
+	}
+
+	file, err := peFileVersion(exePath)
+	if err != nil {
+		return fmt.Errorf("NVM4314: unable to read FileVersion from %s: %w", exePath, err)
+	}
+	if !coreVersionEqual(file, version) {
+		return fmt.Errorf("NVM4314: node.exe FileVersion %d.%d.%d does not match folder v%s", file.major, file.minor, file.patch, version)
+	}
+	return nil
+}
