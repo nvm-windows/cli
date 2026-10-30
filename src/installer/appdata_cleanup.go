@@ -35,6 +35,15 @@ func CleanupCurrentUserAppData() error {
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to remove sync scheduled tasks: %w", err))
 	}
 
+	// Community keeps nvm.exe under LocalAppData. When that binary is still present,
+	// shared Node installs and Windows Apps ARP entries must stay for the surviving edition.
+	if communityNvmExePresent(os.LookupEnv, os.Stat) {
+		if len(cleanupErrors) > 0 {
+			return errors.Join(cleanupErrors...)
+		}
+		return nil
+	}
+
 	if err := removeAllNodeVersionsWindowsAppsEntries(); err != nil {
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to remove node version Windows Apps entries: %w", err))
 	}
@@ -57,6 +66,18 @@ func CleanupCurrentUserAppData() error {
 	}
 
 	return nil
+}
+
+func communityNvmExePresent(
+	lookupEnv func(string) (string, bool),
+	stat func(string) (os.FileInfo, error),
+) bool {
+	dataRoot, ok := currentUserDataRoot(lookupEnv)
+	if !ok {
+		return false
+	}
+	_, err := stat(filepath.Join(dataRoot, "nvm.exe"))
+	return err == nil
 }
 
 // RemoveSyncScheduledTasks deletes the current-user sync announcement tasks.

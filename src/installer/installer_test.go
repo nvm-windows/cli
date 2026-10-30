@@ -225,6 +225,60 @@ func TestCleanupCurrentUserAppDataIgnoresMissingSyncScheduledTasks(t *testing.T)
 	}
 }
 
+func TestCleanupCurrentUserAppDataKeepsSharedArtifactsWhenCommunityPresent(t *testing.T) {
+	localAppData := t.TempDir()
+	dataRoot := filepath.Join(localAppData, "Author Software", "nvm")
+	if err := os.MkdirAll(dataRoot, 0755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", dataRoot, err)
+	}
+	if err := os.WriteFile(filepath.Join(dataRoot, "nvm.exe"), []byte("community"), 0644); err != nil {
+		t.Fatalf("WriteFile(nvm.exe) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataRoot, "keep.txt"), []byte("keep"), 0644); err != nil {
+		t.Fatalf("WriteFile(keep.txt) error = %v", err)
+	}
+
+	originalValue, hadOriginal := os.LookupEnv(localAppDataEnvName)
+	if err := os.Setenv(localAppDataEnvName, localAppData); err != nil {
+		t.Fatalf("Setenv(%q) error = %v", localAppDataEnvName, err)
+	}
+	oldDelete := deleteScheduledTask
+	deleteScheduledTask = func(string) error { return nil }
+	t.Cleanup(func() {
+		deleteScheduledTask = oldDelete
+		if hadOriginal {
+			_ = os.Setenv(localAppDataEnvName, originalValue)
+			return
+		}
+		_ = os.Unsetenv(localAppDataEnvName)
+	})
+
+	matchingKeyPath := windowsAppsUninstallRoot + `\nvm4w-node-v88.88.88`
+	matchingKey, _, err := registry.CreateKey(registry.CURRENT_USER, matchingKeyPath, registry.SET_VALUE)
+	if err != nil {
+		t.Fatalf("CreateKey(%q) error = %v", matchingKeyPath, err)
+	}
+	if err := matchingKey.SetStringValue("DisplayName", "Node.js v88.88.88 via nvm-windows"); err != nil {
+		matchingKey.Close()
+		t.Fatalf("SetStringValue(DisplayName) error = %v", err)
+	}
+	matchingKey.Close()
+	t.Cleanup(func() { _ = deleteRegistryTree(registry.CURRENT_USER, matchingKeyPath) })
+
+	if err := CleanupCurrentUserAppData(); err != nil {
+		t.Fatalf("CleanupCurrentUserAppData() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dataRoot, "keep.txt")); err != nil {
+		t.Fatalf("shared AppData should remain when community nvm.exe exists: %v", err)
+	}
+	if key, err := registry.OpenKey(registry.CURRENT_USER, matchingKeyPath, registry.QUERY_VALUE); err != nil {
+		t.Fatalf("Windows Apps node entry should remain when community nvm.exe exists: %v", err)
+	} else {
+		key.Close()
+	}
+}
+
 func TestCleanupCurrentUserAppDataRemovesNodeWindowsAppsEntries(t *testing.T) {
 	localAppData := t.TempDir()
 
