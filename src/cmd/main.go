@@ -318,7 +318,11 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		dataRoot := filepath.Dir(installRoot)
+		dataRoot, dataErr := bootstrap.DataRoot()
+		if dataErr != nil {
+			fmt.Fprint(os.Stderr, dataErr.Error())
+			os.Exit(1)
+		}
 		_ = fs.RepairRuntimeACLs(installRoot, dataRoot)
 		if fs.AllowsCrossUserWrite(installRoot) {
 			fmt.Fprint(os.Stderr, "install root remains writable by other users\n")
