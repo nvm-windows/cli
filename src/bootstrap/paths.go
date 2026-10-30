@@ -41,13 +41,18 @@ func InstallRoot() (string, error) {
 	return filepath.Clean(installRoot), nil
 }
 
+// DataRoot is the per-user NVM home for runtime dirs (.shim, .nodejs, .sync, …).
+// It is always under %LOCALAPPDATA%\Author Software\nvm (or ProgramRoot when that
+// is unavailable) — never parent(InstallRoot). Custom InstallRoot may live on
+// another drive; deriving DataRoot from it spilled runtime dirs onto drive roots.
 func DataRoot() (string, error) {
-	installRoot, err := InstallRoot()
-	if err != nil {
-		return "", err
+	if programRootOverride != "" {
+		return filepath.Clean(programRootOverride), nil
 	}
-
-	return filepath.Dir(installRoot), nil
+	if root, ok := canonicalUserDataRootFrom(os.LookupEnv); ok {
+		return filepath.Clean(root), nil
+	}
+	return ProgramRoot()
 }
 
 func CacheRoot() (string, error) {

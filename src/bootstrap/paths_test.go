@@ -6,11 +6,17 @@ import (
 	"testing"
 )
 
-func TestDataRootDerivedFromInstallRoot(t *testing.T) {
-	root := t.TempDir()
+func TestDataRootUsesLocalAppDataNotInstallParent(t *testing.T) {
 	resetBootstrapState(t)
 
-	if err := settings.Put("root", filepath.Join(root, "installs")); err != nil {
+	local := t.TempDir()
+	t.Setenv("LOCALAPPDATA", local)
+	oldOverride := programRootOverride
+	programRootOverride = ""
+	t.Cleanup(func() { programRootOverride = oldOverride })
+
+	customInstall := filepath.Join(t.TempDir(), "D", "nvm")
+	if err := settings.Put("root", customInstall); err != nil {
 		t.Fatalf("Put(root) error = %v", err)
 	}
 
@@ -19,8 +25,9 @@ func TestDataRootDerivedFromInstallRoot(t *testing.T) {
 		t.Fatalf("DataRoot() error = %v", err)
 	}
 
-	if got != root {
-		t.Fatalf("DataRoot() = %q, want %q", got, root)
+	want := filepath.Join(local, "Author Software", "nvm")
+	if got != want {
+		t.Fatalf("DataRoot() = %q, want %q (must not be parent of InstallRoot)", got, want)
 	}
 }
 
@@ -28,7 +35,11 @@ func TestCacheRootDerivedFromDataRoot(t *testing.T) {
 	root := t.TempDir()
 	resetBootstrapState(t)
 
-	if err := settings.Put("root", filepath.Join(root, "installs")); err != nil {
+	oldOverride := programRootOverride
+	programRootOverride = root
+	t.Cleanup(func() { programRootOverride = oldOverride })
+
+	if err := settings.Put("root", filepath.Join(t.TempDir(), "custom-installs")); err != nil {
 		t.Fatalf("Put(root) error = %v", err)
 	}
 
@@ -81,7 +92,11 @@ func TestDataSyncRootDerivedFromDataRoot(t *testing.T) {
 	root := t.TempDir()
 	resetBootstrapState(t)
 
-	if err := settings.Put("root", filepath.Join(root, "installs")); err != nil {
+	oldOverride := programRootOverride
+	programRootOverride = root
+	t.Cleanup(func() { programRootOverride = oldOverride })
+
+	if err := settings.Put("root", filepath.Join(t.TempDir(), "custom-installs")); err != nil {
 		t.Fatalf("Put(root) error = %v", err)
 	}
 

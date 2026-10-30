@@ -25,17 +25,21 @@ func NewSandbox(t *testing.T) *Sandbox {
 	t.Helper()
 
 	tempRoot := t.TempDir()
-	installRoot := filepath.Join(tempRoot, "installs")
+	// Mirror production: DataRoot = %LOCALAPPDATA%\Author Software\nvm, InstallRoot = DataRoot\installs.
+	localAppData := filepath.Join(tempRoot, "Local")
+	dataRoot := filepath.Join(localAppData, "Author Software", "nvm")
+	installRoot := filepath.Join(dataRoot, "installs")
 	if err := os.MkdirAll(installRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll(installRoot) error = %v", err)
 	}
+	t.Setenv("LOCALAPPDATA", localAppData)
 
 	safeName := sanitizeTestName(t.Name())
 	registryKey := fmt.Sprintf("HKCU/Software/NVMTest/clitest_%s", safeName)
 
 	s := &Sandbox{
 		t:           t,
-		TempRoot:    tempRoot,
+		TempRoot:    dataRoot,
 		InstallRoot: installRoot,
 		RegistryKey: registryKey,
 	}
@@ -70,9 +74,9 @@ func (s *Sandbox) Cleanup() {
 	s.deleteRegistryKey()
 }
 
-// DataRoot returns the parent directory of InstallRoot.
+// DataRoot returns the per-user NVM home (parent of InstallRoot in the default layout).
 func (s *Sandbox) DataRoot() string {
-	return filepath.Dir(s.InstallRoot)
+	return s.TempRoot
 }
 
 // WriteSetting persists a configuration value in the sandbox registry.
