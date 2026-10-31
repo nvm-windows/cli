@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"common/acl"
+	license "common/license"
 	"common/modulefirewall"
 	"common/preferences"
 	"common/registry"
@@ -121,6 +122,16 @@ func requireMachine() error {
 func requireCertified() error {
 	if acl.Implementation() != "policy" {
 		return fmt.Errorf("module/version firewall allow|deny requires a Certified Build")
+	}
+	return nil
+}
+
+func requireGovernancePolicy() error {
+	if err := requireCertified(); err != nil {
+		return err
+	}
+	if !license.AllowsMachinePolicy() {
+		return fmt.Errorf("module/version firewall allow|deny requires a Governance license (machine policy)")
 	}
 	return nil
 }
@@ -534,21 +545,21 @@ func removeTrusted(entries []string, machine bool) error {
 }
 
 func (a *AllowVersion) Run() error {
-	if err := requireCertified(); err != nil {
+	if err := requireGovernancePolicy(); err != nil {
 		return err
 	}
 	return appendPolicyMulti("VersionAllowList", a.Entries, false)
 }
 
 func (d *DenyVersion) Run() error {
-	if err := requireCertified(); err != nil {
+	if err := requireGovernancePolicy(); err != nil {
 		return err
 	}
 	return appendPolicyMulti("VersionAllowList", d.Entries, true)
 }
 
 func (a *AllowModule) Run() error {
-	if err := requireCertified(); err != nil {
+	if err := requireGovernancePolicy(); err != nil {
 		return err
 	}
 	key, label := "approved_modules", "ApprovedModules"
@@ -559,7 +570,7 @@ func (a *AllowModule) Run() error {
 }
 
 func (d *DenyModule) Run() error {
-	if err := requireCertified(); err != nil {
+	if err := requireGovernancePolicy(); err != nil {
 		return err
 	}
 	key, label := "approved_modules", "ApprovedModules"
