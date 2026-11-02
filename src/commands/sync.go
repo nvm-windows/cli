@@ -118,7 +118,11 @@ func (c *Doctor) Run() error {
 	return cmd.Run()
 }
 
-type Reshim struct{}
+type Reshim struct {
+	// Force is accepted for compatibility with reshim.exe / hint text ("nvm reshim --force").
+	// sync.exe reshim always passes --force to reshim.exe, so this flag is a no-op.
+	Force bool `flag:"force" help:"Force recreation of locked shims (always applied by sync)."`
+}
 
 func (c *Reshim) Run() error {
 	sync, err := getSyncToolPath()

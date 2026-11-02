@@ -81,5 +81,15 @@ func findModuleLaunchers(name string) []string {
 		add(filepath.Join(appdata, "npm", name+".cmd"))
 		add(filepath.Join(appdata, "npm", name+".bat"))
 	}
+
+	// Standalone pnpm (get.pnpm.io): PNPM_HOME\bin\pnpm.cmd
+	if strings.EqualFold(name, "pnpm") {
+		if home := strings.TrimSpace(os.Getenv("PNPM_HOME")); home != "" {
+			add(filepath.Join(home, "bin", name+".cmd"))
+			add(filepath.Join(home, "bin", name+".bat"))
+			add(filepath.Join(home, name+".cmd"))
+			add(filepath.Join(home, name+".bat"))
+		}
+	}
 	return out
 }
