@@ -19,6 +19,18 @@ func TestCLIReshimCommand(t *testing.T) {
 	}
 }
 
+func TestCLIReshimForceFlagAccepted(t *testing.T) {
+	sb := clitest.NewSandbox(t)
+
+	stdout, stderr, err := sb.ExecuteWithSyncStub("reshim", "--force")
+	if err != nil {
+		t.Fatalf("Execute(reshim --force) error = %v stderr = %q stdout = %q", err, stderr, stdout)
+	}
+	if strings.Contains(stderr, "unknown flag") {
+		t.Fatalf("Execute(reshim --force) stderr = %q, flag should be accepted", stderr)
+	}
+}
+
 func TestCLIDoctorCommand(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 
