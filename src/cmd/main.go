@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"common/eventlog"
 	"common/fs"
 	"common/license"
 	"common/notify"
@@ -412,6 +413,7 @@ func main() {
 
 	settings.Load()
 	settings.ProductVersion = version
+	eventlog.ProductVersion = version
 	// Layout / license advisories only on help and env — not every command.
 	if metaHelp || strings.EqualFold(os.Args[1], "env") {
 		warnStartupAdvisoriesIfNeeded()
