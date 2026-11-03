@@ -58,6 +58,8 @@ func findModuleLaunchers(name string) []string {
 		out = append(out, path)
 	}
 
+	cliRels := verifycache.PackageManagerCliRelPathsFor(name)
+
 	root := settings.Expand(settings.Global().Root)
 	if root != "" && root != "." {
 		entries, err := os.ReadDir(root)
@@ -73,6 +75,9 @@ func findModuleLaunchers(name string) []string {
 				dir := filepath.Join(root, n)
 				add(filepath.Join(dir, name+".cmd"))
 				add(filepath.Join(dir, name+".bat"))
+				for _, rel := range cliRels {
+					add(filepath.Join(dir, filepath.FromSlash(rel)))
+				}
 			}
 		}
 	}
@@ -82,11 +87,14 @@ func findModuleLaunchers(name string) []string {
 		add(filepath.Join(appdata, "npm", name+".bat"))
 	}
 
-	// Standalone pnpm (get.pnpm.io): PNPM_HOME\bin\pnpm.cmd
+	// Standalone pnpm (get.pnpm.io): PNPM_HOME\bin\pnpm.cmd (+ optional .mjs)
 	if strings.EqualFold(name, "pnpm") {
 		if home := strings.TrimSpace(os.Getenv("PNPM_HOME")); home != "" {
 			add(filepath.Join(home, "bin", name+".cmd"))
 			add(filepath.Join(home, "bin", name+".bat"))
+			add(filepath.Join(home, "bin", name+".mjs"))
+			add(filepath.Join(home, "bin", name+".cjs"))
+			add(filepath.Join(home, "bin", name+".js"))
 			add(filepath.Join(home, name+".cmd"))
 			add(filepath.Join(home, name+".bat"))
 		}
