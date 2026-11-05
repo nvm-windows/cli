@@ -169,7 +169,10 @@ func npmInstall(
 }
 
 func getModuleList(version string) (map[string]string, error) {
-	root := filepath.Join(getRoot(version), "node_modules")
+	return listModulesAt(filepath.Join(getRoot(version), "node_modules"))
+}
+
+func listModulesAt(root string) (map[string]string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -191,8 +194,11 @@ func getModuleList(version string) (map[string]string, error) {
 			}
 			for _, s := range scoped {
 				if s.IsDir() {
-					modName := filepath.Join(name, s.Name())
-					modules[modName] = filepath.Join(root, modName)
+					// npm package names always use '/', even on Windows.
+					// filepath.Join would produce `@scope\name`, which npm
+					// treats as a local path (breaks `nvm install --from`).
+					modName := name + "/" + s.Name()
+					modules[modName] = filepath.Join(root, name, s.Name())
 				}
 			}
 			continue
