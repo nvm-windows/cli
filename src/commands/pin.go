@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"common/fs"
 	"common/notify"
 	"common/resolver"
 	"common/settings"
@@ -17,6 +18,29 @@ import (
 
 	"github.com/iancoleman/orderedmap"
 )
+
+// refuseDetectFileReparse blocks writes through a planted symlink/.nvmrc (or
+// other reparse point), matching the nvm-sh GHSA-8qjx-8r8m-mpqh class.
+func refuseDetectFileReparse(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to write %s: path is a symbolic link or reparse point", path)
+	}
+	reparse, err := fs.IsReparsePoint(path)
+	if err != nil {
+		return err
+	}
+	if reparse {
+		return fmt.Errorf("refusing to write %s: path is a symbolic link or reparse point", path)
+	}
+	return nil
+}
 
 type Pin struct {
 	Version   string `arg:"" name:"version" help:"The version to set in the .nvmrc/package.json/etc file." optional:""`
@@ -129,6 +153,10 @@ func (c *Pin) Run() error {
 		}
 
 		npm_version = npmInfo.Version
+	}
+
+	if err := refuseDetectFileReparse(c.File); err != nil {
+		return err
 	}
 
 	switch strings.ToLower(c.File) {
