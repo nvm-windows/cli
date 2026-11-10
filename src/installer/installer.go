@@ -152,6 +152,16 @@ func Install(cfg InstallConfig) error {
 	}
 
 	status.Done()
+
+	if failures.Load() == 0 && status.TotalInstalled > 0 {
+		for version := range dedupe {
+			if strings.EqualFold(strings.TrimSpace(version), "alpha") {
+				fmt.Println("Note: alpha releases are unstable and may change without notice.")
+				break
+			}
+		}
+	}
+
 	if failures.Load() > 0 {
 		return fmt.Errorf("%d version(s) failed to install", failures.Load())
 	}
@@ -344,6 +354,11 @@ func install(
 	extras := log.StructuredPayload{}
 	if npmVersion, ok := installedNpmVersion(txn.installDir); ok {
 		extras["NpmVersion"] = npmVersion
+	}
+	if strings.EqualFold(strings.TrimSpace(version), "latest") &&
+		resolver.LatestIncludesPrerelease != nil &&
+		resolver.LatestIncludesPrerelease() {
+		extras["LatestMode"] = "legacy"
 	}
 	log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSucceeded, "", extras)
 }

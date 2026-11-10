@@ -17,7 +17,7 @@ var (
 		"lts":        true,
 		"last":       true,
 		"daily":      true, // Reserved for future
-		"alpha":      true, // Reserved for future
+		"alpha":      true, // Built-in: newest -alpha* catalog release
 		"beta":       true, // Reserved for future
 		"prerelease": true, // Reserved for future
 		"link":       true,
