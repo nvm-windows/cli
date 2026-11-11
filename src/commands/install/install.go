@@ -20,7 +20,7 @@ type Install struct {
 	Insecure       bool                    `flag:"insecure" help:"Accept invalid TLS/SSL certs from download sources."`
 	RelaxDeadlines constant.RelaxDeadlines `optional:"" placeholder:"MS" help:"Relax network deadlines for this command. Omit a value to triple the configured budgets, or pass milliseconds."`
 	Deadlines      constant.DeadlineFlags  `embed:""`
-	constant.ArgVersion
+	constant.ArgVersionOptional
 }
 
 func (s *Install) Run(ctx *kong.Context) error {
@@ -42,11 +42,19 @@ func (s *Install) Run(ctx *kong.Context) error {
 		NoCache:               s.NoCache,
 		Force:                 s.Force,
 		CacheDir:              cacheRoot,
-		Versions:              s.Version,
+		Versions:              defaultInstallVersions(s.Version),
 		AllowInsecure:         s.Insecure,
 		CopyModulesFrom:       s.CopyFrom,
 		ModulesFrom:           s.From,
 		AutoInstallModuleList: cfg.AutoInstallModuleList,
 		LocalOnly:             cfg.LocalInstallOnly,
 	})
+}
+
+// defaultInstallVersions makes bare `nvm install` equivalent to `nvm install latest`.
+func defaultInstallVersions(versions []string) []string {
+	if len(versions) == 0 {
+		return []string{"latest"}
+	}
+	return versions
 }
