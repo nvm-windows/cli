@@ -250,11 +250,10 @@ func TestCLIUnknownCommand(t *testing.T) {
 func TestCLIInstallTypoAliasParses(t *testing.T) {
 	sb := clitest.NewSandbox(t)
 
+	// `instal` is an install typo alias. Bare install defaults to latest, so a
+	// missing version is no longer a parse/run error by itself.
 	_, stderr, err := sb.Execute("instal")
-	if err == nil {
-		t.Fatal("Execute(instal) expected run error without version, got nil")
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "unknown command") {
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unknown command") {
 		t.Fatalf("Execute(instal) error = %v, typo alias should resolve to install", err)
 	}
 	_ = stderr

@@ -28,6 +28,18 @@ import (
 
 func init() {
 	verifycache.SetCertifiedVerifyKeyLogging(!license.IsCommunityBuild())
+	resolver.OnLegacyLatestResolved = func(resolved string) {
+		fmt.Fprintf(os.Stderr, "Warning: latest resolved to v%s under LatestIncludesPrerelease policy (legacy tip-of-index).\n", resolved)
+		log.WarnStructured("nvm.resolution.legacy_latest", log.StructuredPayload{
+			"ResolvedVersion": resolved,
+			"LatestMode":      "legacy",
+			"User":            log.Actor(),
+			"sid":             log.ActorSid(),
+			"hostname":        log.Hostname(),
+			"correlation_id":  log.NewCorrelationID(),
+			"Detail":          "LatestIncludesPrerelease policy is active; prefer nvm install alpha or a pinned version",
+		})
+	}
 }
 
 var (

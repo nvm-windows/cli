@@ -1,6 +1,9 @@
 package log
 
-import "strings"
+import (
+	"common/resolver"
+	"strings"
+)
 
 const (
 	OutcomeSucceeded = "Succeeded"
@@ -17,9 +20,15 @@ func LogSystemChanged(action, nodeVersion, resolvedPath, outcome, detail string,
 		return
 	}
 
+	releaseType := "stable"
+	if resolver.IsUnstableVersion(nodeVersion) {
+		releaseType = "unstable"
+	}
+
 	payload := StructuredPayload{
 		"Action":         action,
 		"NodeVersion":    nodeVersion,
+		"ReleaseType":    releaseType,
 		"Outcome":        outcome,
 		"User":           Actor(),
 		"sid":            ActorSid(),
