@@ -16,7 +16,7 @@ type Version struct {
 	constant.FlagInstall
 	constant.FlagNoInstall
 	Version []string `arg:"" name:"version" optional:"" help:"Node.js version to activate (e.g. latest, lts, x.x.x)."`
-	Local   bool     `flag:"local" short:"l" help:"Use the latest installed version matching the specified partial version."`
+	Local   bool     `flag:"local" short:"l" help:"Use the latest installed match (partial majors prefer GA over prerelease; alpha is alpha-only)."`
 }
 
 func getStringSetting(name string) (string, error) {
@@ -69,7 +69,14 @@ func (s *Version) Run() error {
 
 	// --local: resolve to the best installed match without touching the network.
 	if s.Local {
-		matched, ok := resolver.LatestInstalledMatch(requestedVersion)
+		var matched string
+		var ok bool
+		if strings.EqualFold(strings.TrimSpace(requestedVersion), "alpha") {
+			// alpha is restricted to -alpha installs (never GA/rc).
+			matched, ok = resolver.LatestInstalledAlpha()
+		} else {
+			matched, ok = resolver.LatestInstalledMatch(requestedVersion)
+		}
 		if !ok {
 			return fmt.Errorf("v%s is not installed", formatNotInstalledVersion(requestedVersion))
 		}
