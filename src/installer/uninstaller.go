@@ -75,9 +75,12 @@ func Uninstall(cfg UninstallConfig) error {
 
 	targetSet := make(map[string]struct{}, len(targets))
 	for _, version := range targets {
-		normalized := normalizeVersionSpec(version)
-		if normalized != "" {
-			targetSet[normalized] = struct{}{}
+		// Exact uninstalls must key by full tag (including -alpha/-rc) so
+		// sibling prereleases that share an x.y.z core are not treated as the
+		// same target (nvm-windows/nvm#1561).
+		canonical := canonicalVersionSpec(version)
+		if canonical != "" {
+			targetSet[canonical] = struct{}{}
 		}
 	}
 	if err := prepareActiveForUninstall(targetSet, record); err != nil {
@@ -121,7 +124,7 @@ var runReshim = reshim
 
 func prepareActiveForUninstall(targetSet map[string]struct{}, record func(string)) error {
 	cfg := settings.Global()
-	active := normalizeVersionSpec(cfg.ActiveVersion)
+	active := canonicalVersionSpec(cfg.ActiveVersion)
 	if active == "" {
 		return nil
 	}
@@ -131,7 +134,7 @@ func prepareActiveForUninstall(targetSet map[string]struct{}, record func(string
 
 	installed := scanInstalledVersions()
 
-	last := normalizeVersionSpec(cfg.LastVersion)
+	last := canonicalVersionSpec(cfg.LastVersion)
 	if last != "" {
 		if _, removingLast := targetSet[last]; !removingLast {
 			if isInstalledInList(installed, last) {
@@ -170,25 +173,25 @@ func prepareActiveForUninstall(targetSet map[string]struct{}, record func(string
 
 func nextInstalledFallback(installed []string, active string, targetSet map[string]struct{}) (string, bool) {
 	for _, candidate := range installed {
-		normalized := normalizeVersionSpec(candidate)
-		if normalized == "" || normalized == active {
+		canonical := canonicalVersionSpec(candidate)
+		if canonical == "" || canonical == active {
 			continue
 		}
-		if _, removing := targetSet[normalized]; removing {
+		if _, removing := targetSet[canonical]; removing {
 			continue
 		}
-		return normalized, true
+		return canonical, true
 	}
 	return "", false
 }
 
 func isInstalledInList(installed []string, version string) bool {
-	target := normalizeVersionSpec(version)
+	target := canonicalVersionSpec(version)
 	if target == "" {
 		return false
 	}
 	for _, candidate := range installed {
-		if normalizeVersionSpec(candidate) == target {
+		if canonicalVersionSpec(candidate) == target {
 			return true
 		}
 	}
@@ -243,6 +246,12 @@ func expandUninstallTargets(inputs []string, skipped *atomic.Int32, record func(
 
 func normalizeVersionSpec(version string) string {
 	return resolver.NormalizeVersion(version)
+}
+
+// canonicalVersionSpec keeps prerelease/build metadata so exact tags like
+// 27.0.0-alpha.0.0.0 and 27.0.0-alpha.0.1.0 remain distinct.
+func canonicalVersionSpec(version string) string {
+	return resolver.CanonicalVersion(version)
 }
 
 func isRangeSpec(version string) bool {
@@ -378,33 +387,43 @@ func matchInstalledRange(spec string, installed []string) []string {
 func uninstallVersion(version string, cfg UninstallConfig, wg *sync.WaitGroup, failures *atomic.Int32, record func(string)) {
 	defer wg.Done()
 
-	requestedSpec := normalizeVersionSpec(version)
+	requestedCore := normalizeVersionSpec(version)
+	requestedCanonical := canonicalVersionSpec(version)
 	node_version := ""
 
-	if isRangeSpec(requestedSpec) {
-		if latest, ok := latestInstalledPartialMatch(requestedSpec, scanInstalledVersions()); ok {
-			node_version = latest
+	if isRangeSpec(requestedCore) {
+		if latest, ok := latestInstalledPartialMatch(requestedCore, scanInstalledVersions()); ok {
+			node_version = canonicalVersionSpec(latest)
 		}
 	}
 
 	if node_version == "" {
-		resolvedVersion, _, err := resolver.Find(version)
-		if err != nil {
-			// Apps uninstall can still proceed from ARP InstallLocation without mirror resolution.
-			if cfg.FromApps && lookupARPInstallLocation(version) != "" {
-				node_version = normalizeVersionSpec(version)
-			} else {
-				fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", version, err)
-				log.LogSystemChanged("uninstall", version, "", log.OutcomeFailed, err.Error())
-				failures.Add(1)
-				return
-			}
+		// Exact prerelease tags are identified by their full canonical form.
+		// Prefer the caller's tag over Find/Normalize stripping (nvm#1561).
+		if resolver.IsUnstableVersion(version) && requestedCanonical != "" {
+			node_version = requestedCanonical
 		} else {
-			node_version = normalizeVersionSpec(resolvedVersion)
+			resolvedVersion, _, err := resolver.Find(version)
+			if err != nil {
+				// Apps uninstall can still proceed from ARP InstallLocation without mirror resolution.
+				if cfg.FromApps && lookupARPInstallLocation(version) != "" {
+					node_version = requestedCanonical
+					if node_version == "" {
+						node_version = requestedCore
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "FAILED v%s %v\n", version, err)
+					log.LogSystemChanged("uninstall", version, "", log.OutcomeFailed, err.Error())
+					failures.Add(1)
+					return
+				}
+			} else {
+				node_version = canonicalVersionSpec(resolvedVersion)
+			}
 		}
 	}
 
-	matchSpecs := []string{normalizeVersionSpec(version), normalizeVersionSpec(node_version)}
+	matchSpecs := []string{requestedCanonical, canonicalVersionSpec(node_version)}
 	installDirs := findInstalledVersionDirs(matchSpecs...)
 	if uninstallDebugEnabled() {
 		fmt.Fprintf(os.Stderr, "[uninstall-debug] requested=%s resolved=%s root=%s matches=%v dirs=%v\n", version, node_version, expand(settings.Global().Root), matchSpecs, installDirs)
@@ -512,7 +531,7 @@ func findInstalledVersionDirs(versions ...string) []string {
 
 	targets := make(map[string]struct{}, len(versions))
 	for _, version := range versions {
-		n := normalizeVersionSpec(version)
+		n := canonicalVersionSpec(version)
 		if n != "" {
 			targets[n] = struct{}{}
 		}
@@ -529,7 +548,7 @@ func findInstalledVersionDirs(versions ...string) []string {
 			continue
 		}
 
-		if _, ok := targets[normalizeVersionSpec(entry.Name())]; ok {
+		if _, ok := targets[canonicalVersionSpec(entry.Name())]; ok {
 			result = append(result, versionDir)
 		}
 	}
@@ -554,7 +573,7 @@ func unregisterNodeVersionForInstallDirs(version string, installDirs []string) b
 	const uninstallRootPath = `Software\Microsoft\Windows\CurrentVersion\Uninstall`
 	const keyPrefix = "nvm4w-node-v"
 
-	targetVersion := normalizeVersionSpec(version)
+	targetVersion := canonicalVersionSpec(version)
 	if targetVersion == "" {
 		return false
 	}
@@ -596,8 +615,8 @@ func unregisterNodeVersionForInstallDirs(version string, installDirs []string) b
 		managedBy, _, _ := entryKey.GetStringValue("ManagedBy")
 		entryKey.Close()
 
-		nameVersion := normalizeVersionSpec(strings.TrimPrefix(subKeyName, "nvm4w-node-v"))
-		displayVersionNorm := normalizeVersionSpec(displayVersion)
+		nameVersion := canonicalVersionSpec(strings.TrimPrefix(subKeyName, "nvm4w-node-v"))
+		displayVersionNorm := canonicalVersionSpec(displayVersion)
 		installLocationNorm := normalizeInstallPath(installLocation)
 
 		matchVersion := nameVersion == targetVersion || displayVersionNorm == targetVersion
