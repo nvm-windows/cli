@@ -78,6 +78,55 @@ func TestPrepareActiveForUninstallChoosesLatestSemverFallback(t *testing.T) {
 	}
 }
 
+func TestFindInstalledVersionDirsKeepsSiblingPrereleasesDistinct(t *testing.T) {
+	root := t.TempDir()
+	setTestSetting(t, "root", root)
+
+	createInstalledVersion(t, root, "27.0.0-alpha.0.0.0")
+	createInstalledVersion(t, root, "27.0.0-alpha.0.1.0")
+
+	dirs := findInstalledVersionDirs("27.0.0-alpha.0.0.0")
+	if len(dirs) != 1 {
+		t.Fatalf("findInstalledVersionDirs(alpha.0.0.0) len = %d, want 1 (%v)", len(dirs), dirs)
+	}
+	if got := filepath.Base(dirs[0]); got != "v27.0.0-alpha.0.0.0" {
+		t.Fatalf("findInstalledVersionDirs(alpha.0.0.0) = %q, want v27.0.0-alpha.0.0.0", got)
+	}
+
+	// Core-only match must not collapse distinct prerelease installs.
+	if dirs := findInstalledVersionDirs("27.0.0"); len(dirs) != 0 {
+		t.Fatalf("findInstalledVersionDirs(27.0.0) = %v, want none (alphas are distinct tags)", dirs)
+	}
+}
+
+func TestPrepareActiveForUninstallLeavesSiblingPrereleaseActive(t *testing.T) {
+	root := t.TempDir()
+	setTestSetting(t, "root", root)
+	setTestSetting(t, "active_version", "27.0.0-alpha.0.1.0")
+	setTestSetting(t, "last_version", "")
+
+	createInstalledVersion(t, root, "27.0.0-alpha.0.0.0")
+	createInstalledVersion(t, root, "27.0.0-alpha.0.1.0")
+
+	var messages []string
+	record := func(msg string) { messages = append(messages, msg) }
+
+	if err := prepareActiveForUninstall(map[string]struct{}{"27.0.0-alpha.0.0.0": {}}, record); err != nil {
+		t.Fatalf("prepareActiveForUninstall() error = %v", err)
+	}
+
+	active, err := settings.Get("active_version")
+	if err != nil {
+		t.Fatalf("Get(active_version) error = %v", err)
+	}
+	if got := active.(string); got != "27.0.0-alpha.0.1.0" {
+		t.Fatalf("active_version = %q, want %q (sibling alpha must stay active)", got, "27.0.0-alpha.0.1.0")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("unexpected prepare messages: %v", messages)
+	}
+}
+
 func setTestSetting(t *testing.T, name, value string) {
 	t.Helper()
 	if err := settings.Put(name, value); err != nil {
