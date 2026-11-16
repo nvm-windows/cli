@@ -39,29 +39,36 @@ func hideNodejsLink(path string) {
 	_ = windows.SetFileAttributes(ptr, attrs|windows.FILE_ATTRIBUTE_HIDDEN)
 }
 
-// Link attempts to create an NTFS junction, falling back to
-// a symlink if junction creation fails (e.g. on non-NTFS volumes/UNC paths).
-func Link(source, symlink string) error {
-	// Remove whatever already exists at the symlink path (previous junction, symlink, or empty dir).
-	if _, err := os.Lstat(symlink); err == nil {
-		if err := os.Remove(symlink); err != nil {
-			err = fmt.Errorf("failed to remove existing link %s: %w", symlink, err)
+// Link creates an activation link at symlink pointing at source.
+// By default it tries an NTFS junction, then falls back to a symlink.
+// When settings.RequireActivationSymlinks is true (certified OpenSSH /
+// Redirection Guard), only a symlink is created.
+func Link(source, symlinkPath string) error {
+	// Remove whatever already exists at the path (previous junction, symlink, or empty dir).
+	if _, err := os.Lstat(symlinkPath); err == nil {
+		if err := os.Remove(symlinkPath); err != nil {
+			err = fmt.Errorf("failed to remove existing link %s: %w", symlinkPath, err)
 			log.Error(err)
 			return err
 		}
 	}
 
-	// Attempt NTFS junction creation
-	if err := NewJunction(source, symlink); err == nil {
-		hideNodejsLink(symlink)
-		return nil
+	requireSymlink := settings.Global().RequireActivationSymlinks
+	if !requireSymlink {
+		if err := NewJunction(source, symlinkPath); err == nil {
+			hideNodejsLink(symlinkPath)
+			return nil
+		}
 	}
 
-	// Fallback to symlink (requires Developer Mode).
-	if err := os.Symlink(source, symlink); err != nil {
-		val, _, err := registry.Get("HKLM/SOFTWARE/Microsoft/Windows/CurrentVersion/AppModelUnlock/AllowDevelopmentWithoutDevLicense")
-		if err != nil {
-			err = fmt.Errorf("failed to get developer mode setting: %w", err)
+	return createSymlink(source, symlinkPath)
+}
+
+func createSymlink(source, symlinkPath string) error {
+	if err := os.Symlink(source, symlinkPath); err != nil {
+		val, _, getErr := registry.Get("HKLM/SOFTWARE/Microsoft/Windows/CurrentVersion/AppModelUnlock/AllowDevelopmentWithoutDevLicense")
+		if getErr != nil {
+			err = fmt.Errorf("failed to get developer mode setting: %w", getErr)
 			log.Error(err)
 			return err
 		}
@@ -79,7 +86,6 @@ func Link(source, symlink string) error {
 		}
 
 		if no_devmode {
-			// Trigger a notification to open settings to enable developer mode
 			// Critical setup toast: no collection (reserved nvm.setup).
 			notify.Send(settings.AppId, "Help Enabling Symlinks", "Developer Mode is required to use symlinks.",
 				notify.Action{Label: "Open Developer Settings", URL: "ms-settings:developers"},
@@ -87,13 +93,55 @@ func Link(source, symlink string) error {
 		}
 
 		log.Errorf("permission denied creating symlink (developer mode %v): %v", val, err)
-
 		return fmt.Errorf("permission denied")
 	}
 
-	hideNodejsLink(symlink)
-
+	hideNodejsLink(symlinkPath)
 	return nil
+}
+
+// IsMountPointJunction reports whether path is an NTFS mount-point junction
+// (IO_REPARSE_TAG_MOUNT_POINT), not a symlink.
+func IsMountPointJunction(path string) bool {
+	ptr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false
+	}
+	attrs, err := windows.GetFileAttributes(ptr)
+	if err != nil {
+		return false
+	}
+	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+		return false
+	}
+
+	handle, err := windows.CreateFile(
+		ptr,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(handle)
+
+	// Microsoft reparse buffer: first DWORD is ReparseTag.
+	buf := make([]byte, 16*1024)
+	var n uint32
+	const fsctlGetReparsePoint = 0x000900A8
+	if err := windows.DeviceIoControl(handle, fsctlGetReparsePoint, nil, 0, &buf[0], uint32(len(buf)), &n, nil); err != nil {
+		return false
+	}
+	if n < 4 {
+		return false
+	}
+	tag := binary.LittleEndian.Uint32(buf[0:])
+	const ioReparseTagMountPoint = 0xA0000003
+	return tag == ioReparseTagMountPoint
 }
 
 func Unlink(target string) error {

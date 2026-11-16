@@ -128,14 +128,15 @@ func ensureActivationLink(mode, dataRoot, installRoot, shimDir, activeVersion st
 	}
 
 	nodejsPath := filepath.Join(dataRoot, ".nodejs")
+	requireSymlinks := settings.Global().RequireActivationSymlinks
 
 	switch mode {
 	case "shim":
-		if activationLinkMatches(nodejsPath, shimDir) {
+		if activationLinkOK(nodejsPath, shimDir, requireSymlinks) {
 			return nil
 		}
 		if err := link.Link(shimDir, nodejsPath); err != nil {
-			return fmt.Errorf("failed to ensure .nodejs junction: %w", err)
+			return fmt.Errorf("failed to ensure .nodejs activation link: %w", err)
 		}
 		return nil
 
@@ -143,7 +144,7 @@ func ensureActivationLink(mode, dataRoot, installRoot, shimDir, activeVersion st
 		linkNodePath := filepath.Join(dataRoot, ".link", "nodejs")
 		if version := strings.TrimSpace(activeVersion); version != "" {
 			versionDir := filepath.Join(installRoot, "v"+version)
-			if !activationLinkMatches(linkNodePath, versionDir) {
+			if !activationLinkOK(linkNodePath, versionDir, requireSymlinks) {
 				if err := ValidateVersionActivation(versionDir); err != nil {
 					return err
 				}
@@ -153,17 +154,29 @@ func ensureActivationLink(mode, dataRoot, installRoot, shimDir, activeVersion st
 			}
 		}
 
-		if activationLinkMatches(nodejsPath, linkNodePath) {
+		if activationLinkOK(nodejsPath, linkNodePath, requireSymlinks) {
 			return nil
 		}
 		if err := link.Link(linkNodePath, nodejsPath); err != nil {
-			return fmt.Errorf("failed to ensure .nodejs junction: %w", err)
+			return fmt.Errorf("failed to ensure .nodejs activation link: %w", err)
 		}
 		return nil
 
 	default:
 		return fmt.Errorf("unsupported operating mode %q", mode)
 	}
+}
+
+// activationLinkOK is true when the link points at expectedTarget and, when
+// RequireActivationSymlinks is set, is not still a mount-point junction.
+func activationLinkOK(linkPath, expectedTarget string, requireSymlinks bool) bool {
+	if !activationLinkMatches(linkPath, expectedTarget) {
+		return false
+	}
+	if requireSymlinks && link.IsMountPointJunction(linkPath) {
+		return false
+	}
+	return true
 }
 
 func activationLinkMatches(linkPath, expectedTarget string) bool {
