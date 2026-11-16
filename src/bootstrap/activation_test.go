@@ -3,7 +3,9 @@
 package bootstrap
 
 import (
+	"common/settings"
 	"errors"
+	"nvm/link"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,4 +92,45 @@ func stubActivationBlockedLog(t *testing.T, replacement func(string, string, str
 	}
 	logActivationBlocked = replacement
 	t.Cleanup(func() { logActivationBlocked = original })
+}
+
+func TestEnsureActivationLinkMigratesJunctionWhenRequireSymlinks(t *testing.T) {
+	root := t.TempDir()
+	shimDir := filepath.Join(root, ".shim")
+	if err := os.MkdirAll(shimDir, 0755); err != nil {
+		t.Fatalf("MkdirAll(.shim) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shimDir, "node.exe"), []byte("shim"), 0644); err != nil {
+		t.Fatalf("WriteFile(.shim\\node.exe) error = %v", err)
+	}
+	nodejsPath := filepath.Join(root, ".nodejs")
+	if err := link.NewJunction(shimDir, nodejsPath); err != nil {
+		t.Fatalf("NewJunction(.nodejs) error = %v", err)
+	}
+	if !link.IsMountPointJunction(nodejsPath) {
+		t.Fatal("precondition: .nodejs should be a junction")
+	}
+
+	if err := settings.Put("require_activation_symlinks", true); err != nil {
+		t.Fatalf("Put(require_activation_symlinks) error = %v", err)
+	}
+	settings.Load(true)
+	t.Cleanup(func() {
+		_ = settings.Put("require_activation_symlinks", false)
+		settings.Load(true)
+	})
+
+	if err := ensureActivationLink("shim", root, filepath.Join(root, "installs"), shimDir, ""); err != nil {
+		t.Fatalf("ensureActivationLink() error = %v", err)
+	}
+	if link.IsMountPointJunction(nodejsPath) {
+		t.Fatal(".nodejs should have been recreated as a symlink")
+	}
+	info, err := os.Lstat(nodejsPath)
+	if err != nil {
+		t.Fatalf("Lstat(.nodejs) error = %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf(".nodejs mode = %v, want symlink", info.Mode())
+	}
 }
