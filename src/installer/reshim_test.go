@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -153,5 +154,50 @@ func TestReshimWrapsUtilityFailure(t *testing.T) {
 	}
 	if got := err.Error(); !strings.Contains(got, "reshim failed:") || !strings.Contains(got, "exit status 17") {
 		t.Fatalf("reshim() error = %q, want wrapped exit status 17", got)
+	}
+}
+
+func TestFinalizeInstallShimsRollsBackOnReshimFailure(t *testing.T) {
+	setupReshimTestProfile(t)
+
+	installDir := filepath.Join(t.TempDir(), "v22.0.0")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", installDir, err)
+	}
+	marker := filepath.Join(installDir, "node.exe")
+	if err := os.WriteFile(marker, []byte("node"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", marker, err)
+	}
+
+	orig := runReshim
+	t.Cleanup(func() { runReshim = orig })
+	runReshim = func() error {
+		return fmt.Errorf("reshim failed: exit status 1")
+	}
+
+	status := newStatus()
+	status.TotalInstalled = 1
+	status.Versions = []string{"22.0.0"}
+	status.running = true
+
+	txn := &Transaction{
+		version:      "22.0.0",
+		installDir:   installDir,
+		installedNew: true,
+		installed:    false,
+	}
+
+	err := finalizeInstallShims([]*Transaction{txn}, status, false, true)
+	if err == nil {
+		t.Fatal("finalizeInstallShims error = nil, want reshim failure")
+	}
+	if got := err.Error(); !strings.Contains(got, "reshim failed") {
+		t.Fatalf("finalizeInstallShims error = %q, want reshim failed", got)
+	}
+	if _, statErr := os.Stat(installDir); !os.IsNotExist(statErr) {
+		t.Fatalf("install dir %q still exists after reshim failure rollback", installDir)
+	}
+	if status.cancelMessage == "" {
+		t.Fatal("status.cancelMessage empty, want rollback cancel message")
 	}
 }

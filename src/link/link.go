@@ -87,9 +87,7 @@ func createSymlink(source, symlinkPath string) error {
 
 		if no_devmode {
 			// Critical setup toast: no collection (reserved nvm.setup).
-			notify.Send(settings.AppId, "Help Enabling Symlinks", "Developer Mode is required to use symlinks.",
-				notify.Action{Label: "Open Developer Settings", URL: "ms-settings:developers"},
-			)
+			_ = notify.HelpEnablingSymlinks(settings.AppId)
 		}
 
 		log.Errorf("permission denied creating symlink (developer mode %v): %v", val, err)

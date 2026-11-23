@@ -104,6 +104,8 @@ func ActivateVersion(version string) error {
 	if mode == "shim" {
 		if err := nvmreshim.Run(); err != nil {
 			log.Error(err)
+			_ = notify.HelpEnablingSymlinks(settings.AppId)
+			printShimLinkGuidance()
 			return err
 		}
 	} else if source, err := stringSetting("root"); err == nil {

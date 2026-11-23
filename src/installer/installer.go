@@ -129,22 +129,8 @@ func Install(cfg InstallConfig) error {
 		return status.Abort("Installation cancelled.", false)
 	}
 
-	for _, txn := range txns {
-		if txn != nil && txn.installBackup != "" && !txn.backupDiscarded {
-			os.RemoveAll(txn.installBackup)
-			txn.backupDiscarded = true
-		}
-	}
-
-	if status.TotalInstalled > 0 || modulesInstalled {
-		if status.TotalInstalled > 0 {
-			if err := activateDefaultIfFirstInstall(hadInstalledVersions, status.Versions); err != nil {
-				status.Alert(fmt.Errorf("activation warning: %v", err))
-			}
-		}
-		if err := reshim(); err != nil {
-			status.Alert(fmt.Errorf("reshim warning: %v", err))
-		}
+	if err := finalizeInstallShims(txns, status, modulesInstalled, hadInstalledVersions); err != nil {
+		return err
 	}
 
 	if err := seedMalwareDefinitions(status); err != nil {
