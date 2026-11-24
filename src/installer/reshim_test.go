@@ -159,6 +159,10 @@ func TestReshimWrapsUtilityFailure(t *testing.T) {
 
 func TestFinalizeInstallShimsRollsBackOnReshimFailure(t *testing.T) {
 	setupReshimTestProfile(t)
+	if err := settings.Put("mode", "shim"); err != nil {
+		t.Fatalf("Put(mode) error = %v", err)
+	}
+	settings.Load(true)
 
 	installDir := filepath.Join(t.TempDir(), "v22.0.0")
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
@@ -199,5 +203,48 @@ func TestFinalizeInstallShimsRollsBackOnReshimFailure(t *testing.T) {
 	}
 	if status.cancelMessage == "" {
 		t.Fatal("status.cancelMessage empty, want rollback cancel message")
+	}
+}
+
+func TestFinalizeInstallShimsSkipsReshimInLinkMode(t *testing.T) {
+	setupReshimTestProfile(t)
+	if err := settings.Put("mode", "link"); err != nil {
+		t.Fatalf("Put(mode) error = %v", err)
+	}
+	settings.Load(true)
+
+	installDir := filepath.Join(t.TempDir(), "v22.0.0")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", installDir, err)
+	}
+
+	orig := runReshim
+	t.Cleanup(func() { runReshim = orig })
+	called := false
+	runReshim = func() error {
+		called = true
+		return fmt.Errorf("reshim should not run in link mode")
+	}
+
+	status := newStatus()
+	status.TotalInstalled = 1
+	status.Versions = []string{"22.0.0"}
+	status.running = true
+
+	txn := &Transaction{
+		version:      "22.0.0",
+		installDir:   installDir,
+		installedNew: true,
+		installed:    false,
+	}
+
+	if err := finalizeInstallShims([]*Transaction{txn}, status, false, true); err != nil {
+		t.Fatalf("finalizeInstallShims error = %v, want nil in link mode", err)
+	}
+	if called {
+		t.Fatal("runReshim was called in link mode")
+	}
+	if _, err := os.Stat(installDir); err != nil {
+		t.Fatalf("install dir should remain after link-mode finalize: %v", err)
 	}
 }
