@@ -14,7 +14,7 @@ import (
 type RemoveVersion struct {
 	prompt
 	All      bool     `flag:"all" short:"a" help:"Treat version numbers as a range and remove all versions within the range. For example, 20.1 removes 20.1.0, 20.1.2, 20.1.3, etc."`
-	Versions []string `arg:"version" optional:"" help:"The version of Node.js to remove from cache (e.g. latest, lts, lts/iron, x.x.x, x.x, x)."`
+	Versions []string `arg:"version" optional:"" help:"The version of Node.js to remove from cache (e.g. latest, lts, lts/iron, lts/-1, x.x.x, x.x, x)."`
 }
 
 func (c *RemoveVersion) Run() error {
