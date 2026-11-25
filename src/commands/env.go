@@ -748,9 +748,15 @@ func installedVersionCount(root string) int {
 		}
 
 		name := strings.ToLower(entry.Name())
-		if strings.HasPrefix(name, "v") {
-			count++
+		if !strings.HasPrefix(name, "v") {
+			continue
 		}
+		nodeExe := filepath.Join(root, entry.Name(), "node.exe")
+		info, statErr := os.Stat(nodeExe)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		count++
 	}
 
 	return count

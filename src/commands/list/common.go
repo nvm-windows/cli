@@ -4,6 +4,7 @@ import (
 	"common/settings"
 	"nvm/commands/cache"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -86,6 +87,7 @@ func getCachedVersionsMap() map[string]bool {
 }
 
 // getInstalledVersionsMap returns a map of installed version numbers (with "v" prefix).
+// A version directory counts only when node.exe is present (same rule as nvm list / use).
 func getInstalledVersionsMap() map[string]bool {
 	installed := make(map[string]bool)
 
@@ -101,12 +103,19 @@ func getInstalledVersionsMap() map[string]bool {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
-			name := strings.ToLower(entry.Name())
-			if strings.HasPrefix(name, "v") {
-				installed[name] = true
-			}
+		if !entry.IsDir() {
+			continue
 		}
+		name := strings.ToLower(entry.Name())
+		if !strings.HasPrefix(name, "v") {
+			continue
+		}
+		nodeExe := filepath.Join(root, entry.Name(), "node.exe")
+		info, statErr := os.Stat(nodeExe)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		installed[name] = true
 	}
 
 	return installed
