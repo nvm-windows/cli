@@ -342,3 +342,31 @@ func TestCleanupCurrentUserAppDataRemovesNodeWindowsAppsEntries(t *testing.T) {
 		key.Close()
 	}
 }
+
+func TestVersionTreeCompleteRequiresNodeExe(t *testing.T) {
+	root := t.TempDir()
+	complete := filepath.Join(root, "v24.22.3")
+	hollow := filepath.Join(root, "v22.0.0")
+	if err := os.MkdirAll(complete, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(hollow, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(complete, "node.exe"), []byte("node"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !versionTreeComplete(complete) {
+		t.Fatal("expected complete tree with node.exe")
+	}
+	if versionTreeComplete(hollow) {
+		t.Fatal("hollow version dir must not count as installed")
+	}
+	if versionTreeComplete(filepath.Join(root, "missing")) {
+		t.Fatal("missing dir must not count as installed")
+	}
+	if versionTreeComplete("") {
+		t.Fatal("empty path must not count as installed")
+	}
+}

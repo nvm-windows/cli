@@ -196,16 +196,29 @@ func install(
 	}
 	defer healInstalledVersionVisibility(txn.installDir)
 
-	if info, err := os.Stat(txn.installDir); err == nil && info.IsDir() {
-		txn.installed = true
-	}
+	// "Installed" means a usable tree (node.exe present), not merely a version
+	// directory. Hollow dirs from interrupted migration otherwise make list/use
+	// disagree with install skip / releases (nvm#1580).
+	txn.installed = versionTreeComplete(txn.installDir)
 	if txn.cacheFile != "" {
 		if _, err := os.Stat(txn.cacheFile); err == nil {
 			txn.cached = true
 		}
 	}
 
-	if !cfg.Force && !cfg.CacheOnly {
+	if !cfg.Force && !cfg.CacheOnly && txn.installed {
+		if trustErr := fs.CheckVersionDirTrust(txn.installDir); trustErr != nil {
+			status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, trustErr.Error())
+			markFailed()
+			return
+		}
+		status.Alert(fmt.Errorf("SKIPPED: v%s is already installed", nodeVersion), false)
+		log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSkipped, "already installed")
+		return
+	}
+
+	if !cfg.CacheOnly && !txn.installed {
 		if info, err := os.Stat(txn.installDir); err == nil && info.IsDir() {
 			if trustErr := fs.CheckVersionDirTrust(txn.installDir); trustErr != nil {
 				status.Alert(fmt.Errorf("FAILED: v%s %v", nodeVersion, trustErr), false)
@@ -213,9 +226,14 @@ func install(
 				markFailed()
 				return
 			}
-			status.Alert(fmt.Errorf("SKIPPED: v%s is already installed", nodeVersion), false)
-			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSkipped, "already installed")
-			return
+			if remErr := os.RemoveAll(txn.installDir); remErr != nil {
+				status.Alert(fmt.Errorf("FAILED: v%s incomplete install at %s (missing node.exe); could not remove: %w", nodeVersion, txn.installDir, remErr), false)
+				log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeFailed, remErr.Error())
+				markFailed()
+				return
+			}
+			status.Alert(fmt.Errorf("INCOMPLETE: v%s had no node.exe; reinstalling", nodeVersion), false)
+			log.LogSystemChanged("install", nodeVersion, txn.installDir, log.OutcomeSkipped, "incomplete version directory removed")
 		}
 	}
 
@@ -668,6 +686,17 @@ func seedMalwareDefinitions(status *Status) error {
 func getRoot(version string) string {
 	target := expand(settings.Global().Root)
 	return filepath.Join(target, fmt.Sprintf("v%s", version))
+}
+
+// versionTreeComplete reports whether installDir is a usable Node.js version
+// tree (node.exe present). An empty or partial directory is not installed.
+func versionTreeComplete(installDir string) bool {
+	if strings.TrimSpace(installDir) == "" {
+		return false
+	}
+	nodeExe := filepath.Join(installDir, "node.exe")
+	info, err := os.Stat(nodeExe)
+	return err == nil && !info.IsDir()
 }
 
 func expand(path string) string {
